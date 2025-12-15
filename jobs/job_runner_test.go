@@ -198,4 +198,27 @@ func TestDefaultJobRunner_StartJobs(t *testing.T) {
 		defer mu.Unlock()
 		assert.Equal(t, health.HealthState_ERROR, status.Checks[health.CheckType("test")].State.Value())
 	})
+	t.Run("recovers from panic and continues running", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+		defer cancel()
+		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
+		runner := NewDefaultJobRunner(healthCheckSource)
+		var count atomic.Int32
+		r := runnable.New("test-runnable", func(ctx context.Context) error {
+			c := count.Add(1)
+			if c == 1 {
+				panic("first iteration panic")
+			}
+			return nil
+		})
+		job := NewDefaultJob("test-job", r,
+			WithInterval(50*time.Millisecond),
+			WithStartImmediately(true),
+			WithErrorLogger(func(ctx context.Context, err error) {}),
+		)
+		runner.StartJobs(ctx, []Job{job})
+		assert.Eventually(t, func() bool {
+			return count.Load() >= 2
+		}, 500*time.Millisecond, 10*time.Millisecond, "job should continue running after panic")
+	})
 }
