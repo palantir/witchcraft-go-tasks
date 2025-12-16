@@ -21,16 +21,21 @@ import (
 	"github.com/palantir/witchcraft-go-tasks/function"
 )
 
-// Job is a simple interface for running an operation
+// Job is a simple interface for running an operation periodically.
 type Job interface {
 	function.NamedRunnable
+	// ShouldStartImmediately returns true if the job should run immediately upon starting,
+	// rather than waiting for the first interval to elapse.
 	ShouldStartImmediately(ctx context.Context) bool
+	// GetInterval returns the duration between job executions.
 	GetInterval(ctx context.Context) time.Duration
-	// LogError is the called if the job returns an error
+	// LogError is called if the job returns an error during execution.
 	LogError(ctx context.Context, err error)
 }
 
-// JobRunner is an interface for that runs a collection of provided Jobs.
+// JobRunner is an interface that runs a collection of provided Jobs.
 type JobRunner interface {
+	// StartJobs begins executing all provided jobs asynchronously.
+	// Each job runs in its own goroutine and will continue until the context is cancelled.
 	StartJobs(ctx context.Context, jobs []Job)
 }
