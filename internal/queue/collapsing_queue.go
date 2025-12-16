@@ -17,15 +17,28 @@ package queue
 import (
 	"sync"
 
-	"github.com/palantir/witchcraft-go-tasks/internal/set"
+	"github.com/palantir/witchcraft-go-tasks/util/set"
 )
 
+// CollapsingQueue is a thread-safe work queue that deduplicates items. If an item
+// is added while it is already queued or being processed, the duplicate is collapsed
+// into the existing entry. This is useful for scenarios where you want to ensure
+// an item is processed, but don't need to process it multiple times if it's added
+// repeatedly (e.g., reconciliation loops, cache invalidation).
+//
+// The type parameter T must be comparable to enable deduplication.
+//
+// Callers must call Done() after processing each item retrieved via Get(). If an
+// item was re-added while being processed, Done() will re-queue it for processing.
 type CollapsingQueue[T comparable] interface {
 	Queue[T]
+	// Done marks the item as finished processing. If the item was re-added to the
+	// queue while it was being processed, it will be re-queued for another processing
+	// cycle. Must be called exactly once for each successful Get() call.
 	Done(item T)
 }
 
-// NewCollapsingQueue  constructs a new work queue (see the package comment).
+// NewCollapsingQueue constructs a new deduplicating work queue.
 func NewCollapsingQueue[T comparable]() CollapsingQueue[T] {
 	return &collapsingQueue[T]{
 		queue:      new(queueWrapper[T]),
@@ -75,11 +88,6 @@ func (q *collapsingQueue[T]) Add(item T) {
 		return
 	}
 	if q.dirty.Has(item) {
-		// the same item is added again before it is processed, call the Touch
-		// function if the queue cares about it (for e.g, reset its priority)
-		if !q.processing.Has(item) {
-			q.queue.Touch(item)
-		}
 		return
 	}
 

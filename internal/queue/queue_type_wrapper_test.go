@@ -14,21 +14,32 @@
 
 package queue
 
-// queue is a slice which implements Queue.
-type queueWrapper[T comparable] []T
+import (
+	"testing"
 
-func (q *queueWrapper[T]) Push(item T) {
-	*q = append(*q, item)
+	"github.com/stretchr/testify/assert"
+)
+
+func TestQueueWrapper_PushAndPop(t *testing.T) {
+	q := new(queueWrapper[string])
+	q.Push("item1")
+	q.Push("item2")
+	assert.Equal(t, 2, q.Len())
+	item := q.Pop()
+	assert.Equal(t, "item1", item)
+	assert.Equal(t, 1, q.Len())
+	item = q.Pop()
+	assert.Equal(t, "item2", item)
+	assert.Equal(t, 0, q.Len())
 }
 
-func (q *queueWrapper[T]) Len() int {
-	return len(*q)
-}
-
-func (q *queueWrapper[T]) Pop() (item T) {
-	item = (*q)[0]
-	// The underlying array still exists and reference this object, so the object will not be garbage collected.
-	(*q)[0] = *new(T)
-	*q = (*q)[1:]
-	return item
+func TestQueueWrapper_FIFOOrder(t *testing.T) {
+	q := new(queueWrapper[int])
+	for i := range 5 {
+		q.Push(i)
+	}
+	for i := range 5 {
+		item := q.Pop()
+		assert.Equal(t, i, item)
+	}
 }

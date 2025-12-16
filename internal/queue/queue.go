@@ -15,137 +15,111 @@
 package queue
 
 import (
-	"sync"
+	"sync/atomic"
 )
 
-type Queue[T comparable] interface {
+// Queue is a thread-safe generic work queue that provides blocking Get operations
+// and graceful shutdown capabilities. Items are processed in FIFO order.
+//
+// Unlike CollapsingQueue, this queue does not deduplicate items - each Add() results
+// in a corresponding Get(). This is suitable for task queues where every submitted
+// item must be processed exactly once.
+//
+// The type parameter T can be any type since no comparison is needed.
+type Queue[T any] interface {
+	// Add enqueues an item for processing. If the queue is shutting down,
+	// the item is silently ignored.
 	Add(item T)
+	// Len returns the current number of items waiting in the queue. This is
+	// informational only and should not be used for synchronization decisions.
 	Len() int
+	// Get blocks until an item is available and returns it. If shutdown is true,
+	// the queue has been shut down and the caller should exit their processing loop.
 	Get() (item T, shutdown bool)
+	// GetWithCallback is like Get but invokes the callback while holding the queue
+	// lock, before returning. This can be used to perform atomic operations when
+	// an item is dequeued.
 	GetWithCallback(callback func()) (item T, shutdown bool)
+	// ShutDown initiates shutdown. New Add() calls are ignored. Blocked Get() calls
+	// will return with shutdown=true once the queue is empty.
 	ShutDown()
+	// ShutDownWithDrain initiates shutdown and blocks until all queued items have
+	// been retrieved via Get(). Can be interrupted by calling ShutDown().
 	ShutDownWithDrain()
+	// ShuttingDown returns true if ShutDown() or ShutDownWithDrain() has been called.
 	ShuttingDown() bool
 }
 
-func NewQueue[T comparable]() Queue[T] {
+// NewQueue constructs a new work queue. Unlike CollapsingQueue, this queue
+// does not deduplicate items - each Add results in a corresponding Get.
+func NewQueue[T any]() Queue[T] {
 	return &queue[T]{
-		queue:  new(queueWrapper[T]),
-		cond:   sync.NewCond(&sync.Mutex{}),
-		stopCh: make(chan struct{}),
+		delegate: NewCollapsingQueue[queueItem](),
 	}
 }
 
-type queue[t comparable] struct {
-	// queue defines the order in which we will work on items. Every
-	// element of queue should be in the dirty set and not in the
-	// processing set.
-	queue *queueWrapper[t]
+// queueItem wraps an item with a unique ID to prevent collapsing behavior.
+// The item is stored as any since the user's T doesn't need to be comparable.
+type queueItem struct {
+	id   uint64
+	item any
+}
 
-	cond *sync.Cond
-
-	shuttingDown bool
-	drain        bool
-
-	// wg manages goroutines started by the queue to allow graceful shutdown
-	// ShutDown() will wait for goroutines to exit before returning.
-	wg sync.WaitGroup
-
-	stopCh chan struct{}
-	// stopOnce guarantees we only signal shutdown a single time
-	stopOnce sync.Once
+// queue wraps CollapsingQueue with unique item IDs to prevent deduplication.
+type queue[T any] struct {
+	delegate CollapsingQueue[queueItem]
+	nextID   atomic.Uint64
 }
 
 // Add marks item as needing processing. When the queue is shutdown new
-// items will silently be ignored and not queued or marked as dirty for
-// reprocessing.
+// items will silently be ignored.
 func (q *queue[T]) Add(item T) {
-	q.cond.L.Lock()
-	defer q.cond.L.Unlock()
-	if q.shuttingDown {
-		return
+	wrapped := queueItem{
+		id:   q.nextID.Add(1),
+		item: item,
 	}
-	q.queue.Push(item)
-	q.cond.Signal()
+	q.delegate.Add(wrapped)
 }
 
 // Len returns the current queue length, for informational purposes only. You
 // shouldn't e.g. gate a call to Add() or Get() on Len() being a particular
 // value, that can't be synchronized properly.
 func (q *queue[T]) Len() int {
-	q.cond.L.Lock()
-	defer q.cond.L.Unlock()
-	return q.queue.Len()
+	return q.delegate.Len()
 }
 
 // Get blocks until it can return an item to be processed. If shutdown = true,
-// the caller should end their goroutine. You must call Done with item when you
-// have finished processing it.
+// the caller should end their goroutine.
 func (q *queue[T]) Get() (item T, shutdown bool) {
 	return q.GetWithCallback(nil)
 }
 
-// GetWithCallback blocks until it can return an item to be processed. If shutdown = true,
-// the caller should end their goroutine. You must call Done with item when you
-// have finished processing it.
+// GetWithCallback blocks until it can return an item to be processed. The callback
+// is invoked while holding the queue lock, before returning. If shutdown = true,
+// the caller should end their goroutine.
 func (q *queue[T]) GetWithCallback(callback func()) (item T, shutdown bool) {
-	q.cond.L.Lock()
-	defer func() {
-		if callback != nil {
-			callback()
-		}
-		q.cond.L.Unlock()
-	}()
-	for q.queue.Len() == 0 && !q.shuttingDown {
-		q.cond.Wait()
-	}
-	if q.queue.Len() == 0 {
-		// We must be shutting down.
+	wrapped, shutdown := q.delegate.GetWithCallback(callback)
+	if shutdown {
 		return *new(T), true
 	}
-
-	item = q.queue.Pop()
-
-	return item, false
+	// Immediately mark as done since Queue doesn't track processing state
+	q.delegate.Done(wrapped)
+	return wrapped.item.(T), false
 }
 
 // ShutDown will cause q to ignore all new items added to it. Worker
-// goroutines will continue processing items in the queue until it is
-// empty and then receive the shutdown signal.
+// goroutines blocked on Get will be unblocked and receive shutdown = true.
 func (q *queue[T]) ShutDown() {
-	defer q.wg.Wait()
-	q.stopOnce.Do(func() {
-		defer close(q.stopCh)
-	})
-
-	q.cond.L.Lock()
-	defer q.cond.L.Unlock()
-
-	q.drain = false
-	q.shuttingDown = true
-	q.cond.Broadcast()
+	q.delegate.ShutDown()
 }
 
 // ShutDownWithDrain is equivalent to ShutDown but waits until all items
-// in the queue have been processed.
-// ShutDown can be called after ShutDownWithDrain to force
-// ShutDownWithDrain to stop waiting.
-// Workers must call Done on an item after processing it, otherwise
-// ShutDownWithDrain will block indefinitely.
+// in the queue have been retrieved.
 func (q *queue[T]) ShutDownWithDrain() {
-	defer q.wg.Wait()
-	q.stopOnce.Do(func() {
-		defer close(q.stopCh)
-	})
-	q.cond.L.Lock()
-	defer q.cond.L.Unlock()
-	q.drain = true
-	q.shuttingDown = true
-	q.cond.Broadcast()
+	q.delegate.ShutDownWithDrain()
 }
 
+// ShuttingDown returns true if the queue is shutting down.
 func (q *queue[T]) ShuttingDown() bool {
-	q.cond.L.Lock()
-	defer q.cond.L.Unlock()
-	return q.shuttingDown
+	return q.delegate.ShuttingDown()
 }
