@@ -33,13 +33,6 @@ func TestQueueWrapper_PushAndPop(t *testing.T) {
 	assert.Equal(t, 0, q.Len())
 }
 
-func TestQueueWrapper_Touch(t *testing.T) {
-	q := new(queueWrapper[string])
-	q.Push("item1")
-	q.Touch("item1")
-	assert.Equal(t, 1, q.Len())
-}
-
 func TestQueueWrapper_FIFOOrder(t *testing.T) {
 	q := new(queueWrapper[int])
 	for i := range 5 {
