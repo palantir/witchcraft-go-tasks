@@ -31,7 +31,7 @@ func (f FunctionFunc[T, R]) Apply(ctx context.Context, arg T) (R, error) {
 	return f(ctx, arg)
 }
 
-// NewFunctionFromFunc creates an interface of Function[T, R] by casing this given function to a FunctionFunc
+// NewFunctionFromFunc returns a Function[T, R] by using type conversion to convert the provided function to a FunctionFunc.
 func NewFunctionFromFunc[T any, R any](funcToCall func(ctx context.Context, arg T) (R, error)) Function[T, R] {
 	return FunctionFunc[T, R](funcToCall)
 }
