@@ -18,19 +18,23 @@ import (
 	"context"
 )
 
-// Runnable is a functional interface for running an underlying function
-// Decorated with a ctx context.Context for input and an error for returning
+// Runnable is a functional interface for executing an operation that may fail.
+//
+// The Run method takes a context for cancellation/timeout support and returns
+// an error if the operation fails. Runnables are commonly used for background tasks,
+// periodic jobs, and composable execution units.
 type Runnable interface {
 	Run(ctx context.Context) error
 }
 
-// NamedRunnable is a named object that can be run.
+// NamedRunnable is a Runnable that has a name.
 type NamedRunnable interface {
 	Runnable
+	// Name returns the name for the runnable. A Runnable's name is mostly informational, and generally used to provide a human-readable name for a runnable that can be logged or used for debugging.
 	Name() string
 }
 
-// RunnableFunc is a type alias for a function that satisfies the Runnable interface
+// RunnableFunc is a named type for a function that implements the Runnable interface.
 type RunnableFunc func(ctx context.Context) error
 
 // Run implements the Runnable interface
@@ -38,27 +42,27 @@ func (f RunnableFunc) Run(ctx context.Context) error {
 	return f(ctx)
 }
 
-// NewRunnableFromFunc creates an interface of Runnable by casing this given function to a RunnableFunc
+// NewRunnableFromFunc creates a Runnable by using type conversion to convert the provided function to a RunnableFunc.
 func NewRunnableFromFunc(funcToCall func(ctx context.Context) error) Runnable {
 	return RunnableFunc(funcToCall)
 }
 
-// NewRunnableFromFunction is a utility function that will create a Runnable given an arg and a Function[T,any]
-func NewRunnableFromFunction[T, R any](arg T, function Function[T, R]) Runnable {
+// NewRunnableFromFunction returns a Runnable created from the provided Function[T, R] and argument. The returned Runnable's Run function calls the Apply function of the provided Function with the provided argument, ignores the R value returned by the function, and returns the error returned by the function.
+func NewRunnableFromFunction[T, R any](function Function[T, R], arg T) Runnable {
 	return NewRunnableFromConsumer(arg, NewConsumerFromFunction(function))
 }
 
-// NewRunnableFromConsumer is a utility function that will create a Runnable given an arg and a Consumer[T]
+// NewRunnableFromConsumer returns a Runnable based on the provided Consumer[T] and argument. The returned Runnable's Run function calls the Accept function of the provided consumer with the provided argument and returns the error returned by the function.
 func NewRunnableFromConsumer[T any](arg T, consumer Consumer[T]) Runnable {
 	return NewRunnableFromFunc(func(ctx context.Context) error {
 		return consumer.Accept(ctx, arg)
 	})
 }
 
-// NewRunnableFromSupplier is a utility function that will create a Runnable given an arg and a Supplier[any]
-func NewRunnableFromSupplier[T any](c Supplier[T]) Runnable {
+// NewRunnableFromSupplier returns a Runnable created from the provided Supplier[R]. The returned Runnable's Run function calls the Get function of the provided Supplier, ignores the R value returned by the function, and returns the error returned by the function.
+func NewRunnableFromSupplier[R any](supplier Supplier[R]) Runnable {
 	return NewRunnableFromFunc(func(ctx context.Context) error {
-		_, err := c.Get(ctx)
+		_, err := supplier.Get(ctx)
 		return err
 	})
 }

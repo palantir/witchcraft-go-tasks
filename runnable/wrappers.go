@@ -24,13 +24,18 @@ import (
 	"github.com/palantir/witchcraft-go-tasks/function"
 )
 
-// ErrorFn is an error handler.
+// ErrorFn is a callback function for handling errors from runnable execution.
+// It receives the context and the error that occurred.
 type ErrorFn func(ctx context.Context, err error)
 
-// Wrapper is a method that wraps a runnable with some logic generating another runnable.
+// Wrapper is a function that wraps a NamedRunnable with additional behavior,
+// returning a new NamedRunnable. Wrappers can be composed to add logging,
+// error handling, timeouts, and other cross-cutting concerns.
 type Wrapper func(runnable function.NamedRunnable) function.NamedRunnable
 
-// WithWrappers stacks an array of wrappers in order.
+// WithWrappers combines multiple wrappers into a single wrapper.
+// Wrappers are applied in order, so the first wrapper in the list becomes the outermost layer.
+// For example, WithWrappers(A, B)(runnable) results in A(B(runnable)).
 func WithWrappers(wrappers ...Wrapper) Wrapper {
 	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		for _, wrapper := range wrappers {
@@ -40,7 +45,8 @@ func WithWrappers(wrappers ...Wrapper) Wrapper {
 	}
 }
 
-// WithFatalLogging wraps a runnable with fatal logging.
+// WithFatalLogging wraps a runnable to recover from panics and log them as fatal errors.
+// If the runnable panics, the panic is recovered, logged with a stacktrace, and returned as an error.
 func WithFatalLogging() Wrapper {
 	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New(runnable.Name(), func(ctx context.Context) error {

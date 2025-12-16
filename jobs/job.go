@@ -30,7 +30,19 @@ type defaultJob struct {
 	startImmediately bool
 }
 
-// NewDefaultJob returns a default Job implementation with the provided name and runFunc
+// NewDefaultJob returns a default Job implementation with the provided name and runnable.
+//
+// The job can be configured using the following options:
+//   - WithInterval: sets the duration between job executions (default: 1 minute)
+//   - WithStartImmediately: if true, the job runs immediately when started (default: false)
+//   - WithErrorLogger: sets a custom error handler (default: logs error with stacktrace via svc1log)
+//
+// Example:
+//
+//	job := NewDefaultJob("my-job", myRunnable,
+//	    WithInterval(5*time.Minute),
+//	    WithStartImmediately(true),
+//	)
 func NewDefaultJob(name string, runnable function.Runnable, options ...JobOption) Job {
 	defaultJob := &defaultJob{
 		name:     name,

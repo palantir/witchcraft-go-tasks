@@ -25,16 +25,37 @@ import (
 )
 
 type defaultJobRunner struct {
-	k8sKeyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
+	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
 }
 
-// NewDefaultJobRunner returns the default implementation of the JobRunner
-func NewDefaultJobRunner(k8sKeyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource) JobRunner {
+// NewDefaultJobRunner returns the default implementation of the JobRunner.
+//
+// The runner executes each job in its own goroutine, respecting the job's interval and
+// start-immediately settings. It integrates with the provided KeyedErrorHealthCheckSource
+// to report job execution health status, submitting success or error after each job run.
+//
+// Features:
+//   - Runs each job asynchronously in a separate goroutine
+//   - Recovers from panics during job execution and logs them
+//   - Adds tracing spans for each job execution
+//   - Logs job lifecycle events (start, errors) via svc1log
+//   - Stops all jobs gracefully when the context is cancelled
+//
+// Example:
+//
+//	healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(
+//	    health.CheckType("jobs"),
+//	    window.UnhealthyIfAtLeastOneError,
+//	)
+//	runner := NewDefaultJobRunner(healthCheckSource)
+//	runner.StartJobs(ctx, []Job{job1, job2})
+func NewDefaultJobRunner(keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource) JobRunner {
 	return &defaultJobRunner{
-		k8sKeyedErrorHealthCheckSource: k8sKeyedErrorHealthCheckSource,
+		keyedErrorHealthCheckSource: keyedErrorHealthCheckSource,
 	}
 }
 
+// StartJobs starts all of the provided jobs. Creates a new goroutine for each job.
 func (d defaultJobRunner) StartJobs(ctx context.Context, jobs []Job) {
 	for _, job := range jobs {
 		d.startJobAsync(ctx, job)
@@ -66,8 +87,8 @@ func (d defaultJobRunner) runJobNoError(ctx context.Context, job Job) {
 	defer fnSpan.Finish()
 	svc1log.FromContext(ctx).Debug("Starting single iteration of the job")
 	err := wapp.RunWithRecoveryLoggingWithError(ctx, job.Run)
-	// TODO Fix CTX
-	d.k8sKeyedErrorHealthCheckSource.Submit(job.Name(), err)
+	// TODO Fix CTX with Health Package update
+	d.keyedErrorHealthCheckSource.Submit(job.Name(), err)
 	if err != nil {
 		job.LogError(ctx, err)
 	}

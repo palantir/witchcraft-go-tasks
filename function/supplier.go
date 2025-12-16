@@ -18,34 +18,39 @@ import (
 	"context"
 )
 
-// Supplier is a generic interface for applying a function that returns type T
-// Decorated with a ctx context.Context for input and an error for returning
-type Supplier[T any] interface {
-	Get(ctx context.Context) (T, error)
+// Supplier is a generic interface for a function that produces a value of type R
+// without requiring any input arguments.
+//
+// The type parameter R represents the output type that the supplier produces.
+// The Get method takes a context for cancellation/timeout support and returns
+// both the result and an error if the operation fails.
+type Supplier[R any] interface {
+	Get(ctx context.Context) (R, error)
 }
 
-// SupplierFunc is a type alias for a function that satisfies the Supplier interface
-type SupplierFunc[T any] func(ctx context.Context) (T, error)
+// SupplierFunc is a named type for a function that implements the Supplier interface.
+type SupplierFunc[R any] func(ctx context.Context) (R, error)
 
-func (f SupplierFunc[T]) Get(ctx context.Context) (T, error) {
+// Get calls the underlying function with the provided context.
+func (f SupplierFunc[R]) Get(ctx context.Context) (R, error) {
 	return f(ctx)
 }
 
-// NewSupplierFromFunc creates an interface of Supplier[T] by casing this given function to a SupplierFunc
-func NewSupplierFromFunc[T any](funcToCall func(ctx context.Context) (T, error)) Supplier[T] {
-	return SupplierFunc[T](funcToCall)
+// NewSupplierFromFunc returns a Supplier[R] by using type conversion to convert the provided function to a SupplierFunc.
+func NewSupplierFromFunc[R any](funcToCall func(ctx context.Context) (R, error)) Supplier[R] {
+	return SupplierFunc[R](funcToCall)
 }
 
-// NewSupplierFromFunction is a utility function that will create a Supplier[R] given an arg and a Function[T,R]
+// NewSupplierFromFunction returns a Supplier[R] created from the provided Function[T, R] and argument. The returned Supplier's Get function calls the Apply function of the provided Function with the provided argument, ignores the R value returned by the function, and returns the error returned by the function.
 func NewSupplierFromFunction[T any, R any](arg T, function Function[T, R]) Supplier[R] {
 	return NewSupplierFromFunc(func(ctx context.Context) (R, error) {
 		return function.Apply(ctx, arg)
 	})
 }
 
-// NewSupplierFromValue is a utility function that will create a Supplier[T] given a value of type T
-func NewSupplierFromValue[T any](value T) Supplier[T] {
-	return NewSupplierFromFunc(func(_ context.Context) (T, error) {
+// NewSupplierFromValue returns a Supplier[R] that implements the Get function by returning the provided value of type R.
+func NewSupplierFromValue[R any](value R) Supplier[R] {
+	return NewSupplierFromFunc(func(_ context.Context) (R, error) {
 		return value, nil
 	})
 }
