@@ -17,7 +17,7 @@ package queue
 import (
 	"sync"
 
-	"github.com/palantir/witchcraft-go-tasks/internal/set"
+	"github.com/palantir/witchcraft-go-tasks/util/set"
 )
 
 type CollapsingQueue[T comparable] interface {
