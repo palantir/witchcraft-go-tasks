@@ -116,7 +116,6 @@ func (q *collapsingQueue[T]) GetWithCallback(callback func()) (item T, shutdown 
 		}
 		q.cond.L.Unlock()
 	}()
-	defer q.cond.L.Unlock()
 	for q.queue.Len() == 0 && !q.shuttingDown {
 		q.cond.Wait()
 	}
