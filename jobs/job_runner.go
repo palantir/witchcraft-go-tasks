@@ -28,7 +28,27 @@ type defaultJobRunner struct {
 	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
 }
 
-// NewDefaultJobRunner returns the default implementation of the JobRunner
+// NewDefaultJobRunner returns the default implementation of the JobRunner.
+//
+// The runner executes each job in its own goroutine, respecting the job's interval and
+// start-immediately settings. It integrates with the provided KeyedErrorHealthCheckSource
+// to report job execution health status, submitting success or error after each job run.
+//
+// Features:
+//   - Runs each job asynchronously in a separate goroutine
+//   - Recovers from panics during job execution and logs them
+//   - Adds tracing spans for each job execution
+//   - Logs job lifecycle events (start, errors) via svc1log
+//   - Stops all jobs gracefully when the context is cancelled
+//
+// Example:
+//
+//	healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(
+//	    health.CheckType("jobs"),
+//	    window.UnhealthyIfAtLeastOneError,
+//	)
+//	runner := NewDefaultJobRunner(healthCheckSource)
+//	runner.StartJobs(ctx, []Job{job1, job2})
 func NewDefaultJobRunner(keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource) JobRunner {
 	return &defaultJobRunner{
 		keyedErrorHealthCheckSource: keyedErrorHealthCheckSource,
