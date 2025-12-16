@@ -27,6 +27,7 @@ type Runnable interface {
 // NamedRunnable is a Runnable that has a name.
 type NamedRunnable interface {
 	Runnable
+    // Name returns the name for the runnable. A Runnable's name is mostly informational, and generally used to provide a human-readable name for a runnable that can be logged or used for debugging.
 	Name() string
 }
 
