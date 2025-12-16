@@ -24,7 +24,7 @@ type Runnable interface {
 	Run(ctx context.Context) error
 }
 
-// NamedRunnable is a named object that can be run.
+// NamedRunnable is a Runnable that has a name.
 type NamedRunnable interface {
 	Runnable
 	Name() string
