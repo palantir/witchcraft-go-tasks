@@ -18,7 +18,7 @@ import (
 	"context"
 )
 
-// Supplier is a generic interface for applying a function that returns type T
+// Supplier is a generic interface for applying a function that returns type R
 // Decorated with a ctx context.Context for input and an error for returning
 type Supplier[T any] interface {
 	Get(ctx context.Context) (T, error)
