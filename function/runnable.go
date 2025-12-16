@@ -30,7 +30,7 @@ type NamedRunnable interface {
 	Name() string
 }
 
-// RunnableFunc is a type alias for a function that satisfies the Runnable interface
+// RunnableFunc is a named type for a function that implements the Runnable interface.
 type RunnableFunc func(ctx context.Context) error
 
 // Run implements the Runnable interface
