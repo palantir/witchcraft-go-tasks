@@ -18,8 +18,12 @@ import (
 	"context"
 )
 
-// Consumer is a generic interface for applying a function that takes type T as an arg and returns nothing
-// Decorated with a ctx context.Context for input and an error for returning
+// Consumer is a generic interface for a function that accepts a value of type T
+// and performs an operation without returning a result.
+//
+// The type parameter T represents the input type that the consumer accepts.
+// The Accept method takes a context for cancellation/timeout support and returns
+// an error if the operation fails.
 type Consumer[T any] interface {
 	Accept(ctx context.Context, arg T) error
 }
@@ -27,6 +31,7 @@ type Consumer[T any] interface {
 // ConsumerFunc is a named type for a function that implements the Consumer interface.
 type ConsumerFunc[T any] func(ctx context.Context, arg T) error
 
+// Accept calls the underlying function with the provided context and argument.
 func (f ConsumerFunc[T]) Accept(ctx context.Context, arg T) error {
 	return f(ctx, arg)
 }

@@ -18,8 +18,12 @@ import (
 	"context"
 )
 
-// Supplier is a generic interface for applying a function that returns type R
-// Decorated with a ctx context.Context for input and an error for returning
+// Supplier is a generic interface for a function that produces a value of type R
+// without requiring any input arguments.
+//
+// The type parameter R represents the output type that the supplier produces.
+// The Get method takes a context for cancellation/timeout support and returns
+// both the result and an error if the operation fails.
 type Supplier[R any] interface {
 	Get(ctx context.Context) (R, error)
 }
@@ -27,11 +31,12 @@ type Supplier[R any] interface {
 // SupplierFunc is a named type for a function that implements the Supplier interface.
 type SupplierFunc[R any] func(ctx context.Context) (R, error)
 
+// Get calls the underlying function with the provided context.
 func (f SupplierFunc[R]) Get(ctx context.Context) (R, error) {
 	return f(ctx)
 }
 
-// NewSupplierFromFunc returns a Supplier[R] by by using type conversion to convert the provided function to a  SupplierFunc.
+// NewSupplierFromFunc returns a Supplier[R] by using type conversion to convert the provided function to a SupplierFunc.
 func NewSupplierFromFunc[R any](funcToCall func(ctx context.Context) (R, error)) Supplier[R] {
 	return SupplierFunc[R](funcToCall)
 }

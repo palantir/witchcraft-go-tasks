@@ -20,7 +20,8 @@ import (
 	"github.com/palantir/witchcraft-go-tasks/function"
 )
 
-// RunFn is the function type for a runnable.
+// RunFn is the function signature for a runnable operation.
+// It takes a context for cancellation/timeout support and returns an error if the operation fails.
 type RunFn func(ctx context.Context) error
 
 type genericRunnable struct {

@@ -18,8 +18,11 @@ import (
 	"context"
 )
 
-// Runnable is a functional interface for running an underlying function
-// Decorated with a ctx context.Context for input and an error for returning
+// Runnable is a functional interface for executing an operation that may fail.
+//
+// The Run method takes a context for cancellation/timeout support and returns
+// an error if the operation fails. Runnables are commonly used for background tasks,
+// periodic jobs, and composable execution units.
 type Runnable interface {
 	Run(ctx context.Context) error
 }
@@ -39,7 +42,7 @@ func (f RunnableFunc) Run(ctx context.Context) error {
 	return f(ctx)
 }
 
-// NewRunnableFromFunc creates an interface of Runnable by using type conversion to convertthe provided function to a RunnableFunc.
+// NewRunnableFromFunc creates a Runnable by using type conversion to convert the provided function to a RunnableFunc.
 func NewRunnableFromFunc(funcToCall func(ctx context.Context) error) Runnable {
 	return RunnableFunc(funcToCall)
 }
