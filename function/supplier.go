@@ -43,7 +43,7 @@ func NewSupplierFromFunction[T any, R any](arg T, function Function[T, R]) Suppl
 	})
 }
 
-// NewSupplierFromValue is a utility function that will create a Supplier[T] given a value of type T
+// NewSupplierFromValue returns a Supplier[R] that implements the Get function by returning the provided value of type R.
 func NewSupplierFromValue[R any](value R) Supplier[R] {
 	return NewSupplierFromFunc(func(_ context.Context) (R, error) {
 		return value, nil
