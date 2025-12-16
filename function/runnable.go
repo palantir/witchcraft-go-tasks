@@ -59,7 +59,7 @@ func NewRunnableFromConsumer[T any](arg T, consumer Consumer[T]) Runnable {
 // NewRunnableFromSupplier returns a Runnable created from the provided Supplier[R]. The returned Runnable's Run function calls the Get function of the provided Supplier, ignores the R value returned by the function, and returns the error returned by the function.
 func NewRunnableFromSupplier[R any](supplier Supplier[R]) Runnable {
 	return NewRunnableFromFunc(func(ctx context.Context) error {
-		_, err := c.Get(ctx)
+		_, err := supplier.Get(ctx)
 		return err
 	})
 }
