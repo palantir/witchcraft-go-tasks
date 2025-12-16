@@ -36,7 +36,7 @@ func NewSupplierFromFunc[R any](funcToCall func(ctx context.Context) (R, error))
 	return SupplierFunc[R](funcToCall)
 }
 
-// NewSupplierFromFunction is a utility function that will create a Supplier[R] given an arg and a Function[T,R]
+// NewSupplierFromFunction returns a Supplier[R] created from the provided Function[T, R] and argument. The returned Supplier's Get function calls the Apply function of the provided Function with the provided argument, ignores the R value returned by the function, and returns the error returned by the function.
 func NewSupplierFromFunction[T any, R any](arg T, function Function[T, R]) Supplier[R] {
 	return NewSupplierFromFunc(func(ctx context.Context) (R, error) {
 		return function.Apply(ctx, arg)
