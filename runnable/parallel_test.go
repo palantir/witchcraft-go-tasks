@@ -18,6 +18,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/palantir/witchcraft-go-tasks/function"
 	"github.com/palantir/witchcraft-go-tasks/internal/testcontext"
 	"github.com/stretchr/testify/assert"
 )
@@ -38,7 +39,7 @@ func TestParallelRunnable(t *testing.T) {
 		<-done
 		return nil
 	})
-	runnable := NewParallel("", 0, []Runnable{runnable1, runnable2})
+	runnable := NewParallel("", 0, []function.NamedRunnable{runnable1, runnable2})
 
 	runnableExited := make(chan struct{})
 	defer func() {

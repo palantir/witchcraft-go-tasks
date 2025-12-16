@@ -16,11 +16,13 @@ package runnable
 
 import (
 	"context"
+
+	"github.com/palantir/witchcraft-go-tasks/function"
 )
 
 type sequentialRunnable struct {
 	name      string
-	runnables []Runnable
+	runnables []function.NamedRunnable
 	wrappers  []Wrapper
 }
 
@@ -28,7 +30,7 @@ type sequentialRunnable struct {
 // The optional wrappers are stacked on top of each underneath runnable in order.
 // Stops execution at the first runnable that returns a non nil error and returns such error.
 // Returns nil at the end if all runnables succeed.
-func NewSequential(name string, runnables []Runnable, wrappers ...Wrapper) Runnable {
+func NewSequential(name string, runnables []function.NamedRunnable, wrappers ...Wrapper) function.NamedRunnable {
 	return &sequentialRunnable{
 		name:      name,
 		runnables: runnables,

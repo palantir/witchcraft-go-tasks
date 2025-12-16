@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/palantir/witchcraft-go-tasks/function"
 	"github.com/palantir/witchcraft-go-tasks/internal/testcontext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,7 +39,7 @@ func TestSequentialRunnable(t *testing.T) {
 		return nil
 	})
 
-	runnable := NewSequential("", []Runnable{runnable1, runnable2})
+	runnable := NewSequential("", []function.NamedRunnable{runnable1, runnable2})
 	err := runnable.Run(ctx)
 	require.NoError(t, err)
 	assert.True(t, called1)
@@ -59,7 +60,7 @@ func TestSequentialRunnable_Error(t *testing.T) {
 		return fmt.Errorf("error-2")
 	})
 
-	runnable := NewSequential("", []Runnable{runnable1, runnable2})
+	runnable := NewSequential("", []function.NamedRunnable{runnable1, runnable2})
 	err := runnable.Run(ctx)
 	require.Error(t, err)
 	assert.Equal(t, fmt.Errorf("error-1"), err)
