@@ -25,13 +25,13 @@ import (
 )
 
 type defaultJobRunner struct {
-	k8sKeyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
+	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
 }
 
 // NewDefaultJobRunner returns the default implementation of the JobRunner
-func NewDefaultJobRunner(k8sKeyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource) JobRunner {
+func NewDefaultJobRunner(keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource) JobRunner {
 	return &defaultJobRunner{
-		k8sKeyedErrorHealthCheckSource: k8sKeyedErrorHealthCheckSource,
+		keyedErrorHealthCheckSource: keyedErrorHealthCheckSource,
 	}
 }
 
@@ -66,8 +66,8 @@ func (d defaultJobRunner) runJobNoError(ctx context.Context, job Job) {
 	defer fnSpan.Finish()
 	svc1log.FromContext(ctx).Debug("Starting single iteration of the job")
 	err := wapp.RunWithRecoveryLoggingWithError(ctx, job.Run)
-	// TODO Fix CTX
-	d.k8sKeyedErrorHealthCheckSource.Submit(job.Name(), err)
+	// TODO Fix CTX with Health Package update
+	d.keyedErrorHealthCheckSource.Submit(job.Name(), err)
 	if err != nil {
 		job.LogError(ctx, err)
 	}
