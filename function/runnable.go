@@ -44,7 +44,7 @@ func NewRunnableFromFunc(funcToCall func(ctx context.Context) error) Runnable {
 	return RunnableFunc(funcToCall)
 }
 
-// NewRunnableFromFunction is a utility function that will create a Runnable given an arg and a Function[T,any]
+// NewRunnableFromFunction returns a Runnable created from the provided Function[T, R] and argument. The returned Runnable's Run function calls the Apply function of the provided Function with the provided argument, ignores the R value returned by the function, and returns the error returned by the function.
 func NewRunnableFromFunction[T, R any](arg T, function Function[T, R]) Runnable {
 	return NewRunnableFromConsumer(arg, NewConsumerFromFunction(function))
 }
