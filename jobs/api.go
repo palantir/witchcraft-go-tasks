@@ -30,7 +30,7 @@ type Job interface {
 	LogError(ctx context.Context, err error)
 }
 
-// JobRunner is an interface for safely running all the specified jobs discussed above
+// JobRunner is an interface for that runs a collection of provided Jobs.
 type JobRunner interface {
 	StartJobs(ctx context.Context, jobs []Job)
 }
