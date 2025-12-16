@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-// JobOption is an option that can be used to configure a job runner.
+// JobOption is an option that can be used to configure Jobs created using the NewDefaultJob function.
 type JobOption interface {
 	apply(*defaultJob)
 }
