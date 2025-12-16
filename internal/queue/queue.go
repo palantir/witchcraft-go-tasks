@@ -18,7 +18,7 @@ import "sync/atomic"
 
 // Queue is a generic work queue that provides blocking Get operations
 // and graceful shutdown capabilities. Items are processed in FIFO order.
-type Queue[T comparable] interface {
+type Queue[T any] interface {
 	Add(item T)
 	Len() int
 	Get() (item T, shutdown bool)
@@ -30,28 +30,29 @@ type Queue[T comparable] interface {
 
 // NewQueue constructs a new work queue. Unlike CollapsingQueue, this queue
 // does not deduplicate items - each Add results in a corresponding Get.
-func NewQueue[T comparable]() Queue[T] {
+func NewQueue[T any]() Queue[T] {
 	return &queue[T]{
-		delegate: NewCollapsingQueue[queueItem[T]](),
+		delegate: NewCollapsingQueue[queueItem](),
 	}
 }
 
 // queueItem wraps an item with a unique ID to prevent collapsing behavior.
-type queueItem[T comparable] struct {
+// The item is stored as any since the user's T doesn't need to be comparable.
+type queueItem struct {
 	id   uint64
-	item T
+	item any
 }
 
 // queue wraps CollapsingQueue with unique item IDs to prevent deduplication.
-type queue[T comparable] struct {
-	delegate CollapsingQueue[queueItem[T]]
+type queue[T any] struct {
+	delegate CollapsingQueue[queueItem]
 	nextID   atomic.Uint64
 }
 
 // Add marks item as needing processing. When the queue is shutdown new
 // items will silently be ignored.
 func (q *queue[T]) Add(item T) {
-	wrapped := queueItem[T]{
+	wrapped := queueItem{
 		id:   q.nextID.Add(1),
 		item: item,
 	}
@@ -81,7 +82,7 @@ func (q *queue[T]) GetWithCallback(callback func()) (item T, shutdown bool) {
 	}
 	// Immediately mark as done since Queue doesn't track processing state
 	q.delegate.Done(wrapped)
-	return wrapped.item, false
+	return wrapped.item.(T), false
 }
 
 // ShutDown will cause q to ignore all new items added to it. Worker
