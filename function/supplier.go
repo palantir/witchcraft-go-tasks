@@ -31,7 +31,7 @@ func (f SupplierFunc[R]) Get(ctx context.Context) (R, error) {
 	return f(ctx)
 }
 
-// NewSupplierFromFunc returns a Supplier[T] by by using type conversion to convert the provided function to a  SupplierFunc.
+// NewSupplierFromFunc returns a Supplier[R] by by using type conversion to convert the provided function to a  SupplierFunc.
 func NewSupplierFromFunc[R any](funcToCall func(ctx context.Context) (R, error)) Supplier[R] {
 	return SupplierFunc[R](funcToCall)
 }
