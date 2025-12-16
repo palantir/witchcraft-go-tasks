@@ -18,12 +18,12 @@ import (
 	"context"
 	"time"
 
-	"github.com/palantir/witchcraft-go-tasks/runnable"
+	"github.com/palantir/witchcraft-go-tasks/function"
 )
 
 // Job is a simple interface for running an operation
 type Job interface {
-	runnable.Runnable
+	function.NamedRunnable
 	ShouldStartImmediately(ctx context.Context) bool
 	GetInterval(ctx context.Context) time.Duration
 	// LogError is the called if the job returns an error
