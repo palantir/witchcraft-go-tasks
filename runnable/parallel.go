@@ -24,7 +24,7 @@ import (
 type parallelRunnable struct {
 	name               string
 	maxParallelWorkers uint
-	runnables          []function.Runnable
+	runnables          []function.NamedRunnable
 	wrappers           []Wrapper
 }
 
@@ -33,7 +33,7 @@ type parallelRunnable struct {
 // Waits for all runnables to finish and returns the first error.
 // Returns nil at the end if all runnables succeed.
 // A value of zero maxParallelWorkers means unbounded parallel workers.
-func NewParallel(name string, maxParallelWorkers uint, runnables []function.Runnable, wrappers ...Wrapper) function.Runnable {
+func NewParallel(name string, maxParallelWorkers uint, runnables []function.NamedRunnable, wrappers ...Wrapper) function.NamedRunnable {
 	return &parallelRunnable{
 		name:               name,
 		maxParallelWorkers: maxParallelWorkers,

@@ -21,13 +21,14 @@ import (
 	"time"
 
 	werror "github.com/palantir/witchcraft-go-error"
+	"github.com/palantir/witchcraft-go-tasks/function"
 	"github.com/palantir/witchcraft-go-tasks/internal/testcontext"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestWithWrappers(t *testing.T) {
 	logs := make([]string, 0, 5)
-	wrapper1 := func(runnable Runnable) Runnable {
+	wrapper1 := func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New("", func(ctx context.Context) error {
 			logs = append(logs, "pre-1")
 			err := runnable.Run(ctx)
@@ -35,7 +36,7 @@ func TestWithWrappers(t *testing.T) {
 			return err
 		})
 	}
-	wrapper2 := func(runnable Runnable) Runnable {
+	wrapper2 := func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New("", func(ctx context.Context) error {
 			logs = append(logs, "pre-2")
 			err := runnable.Run(ctx)

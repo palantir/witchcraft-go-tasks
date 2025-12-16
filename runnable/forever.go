@@ -23,14 +23,14 @@ import (
 
 type foreverRunnable struct {
 	name      string
-	runnables []function.Runnable
+	runnables []function.NamedRunnable
 	wrappers  []Wrapper
 }
 
 // NewForever combines multiple runnables intended to run indefinitely, such as controllers, to run as a single runnable in parallel.
 // The optional wrappers are stacked on top of each underneath runnable in order.
 // On panic or return of a runnable, the context is cancelled and NewForever returns.
-func NewForever(name string, runnables []function.Runnable, wrappers ...Wrapper) function.Runnable {
+func NewForever(name string, runnables []function.NamedRunnable, wrappers ...Wrapper) function.NamedRunnable {
 	return &foreverRunnable{
 		name:      name,
 		runnables: runnables,
