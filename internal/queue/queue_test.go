@@ -133,13 +133,13 @@ func TestQueue_ConcurrentAddAndGet(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < numItems; i++ {
+		for i := range numItems {
 			q.Add(i)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		for i := 0; i < numItems; i++ {
+		for range numItems {
 			_, shutdown := q.Get()
 			if !shutdown {
 				received.Add(1)
@@ -148,4 +148,95 @@ func TestQueue_ConcurrentAddAndGet(t *testing.T) {
 	}()
 	wg.Wait()
 	assert.Equal(t, int32(numItems), received.Load())
+}
+
+func TestQueue_MultipleProducersMultipleConsumers(t *testing.T) {
+	q := NewQueue[int]()
+	numProducers := 10
+	numConsumers := 10
+	itemsPerProducer := 100
+	totalItems := numProducers * itemsPerProducer
+	var producerWg sync.WaitGroup
+	var consumerWg sync.WaitGroup
+	var received atomic.Int32
+	for range numProducers {
+		producerWg.Add(1)
+		go func() {
+			defer producerWg.Done()
+			for i := range itemsPerProducer {
+				q.Add(i)
+			}
+		}()
+	}
+	for range numConsumers {
+		consumerWg.Add(1)
+		go func() {
+			defer consumerWg.Done()
+			for {
+				_, shutdown := q.Get()
+				if shutdown {
+					return
+				}
+				received.Add(1)
+			}
+		}()
+	}
+	producerWg.Wait()
+	q.ShutDown()
+	consumerWg.Wait()
+	assert.Equal(t, int32(totalItems), received.Load())
+}
+
+func TestQueue_ShutDownWithMultipleBlockedGetters(t *testing.T) {
+	q := NewQueue[string]()
+	numGetters := 10
+	var wg sync.WaitGroup
+	var shutdownCount atomic.Int32
+	for range numGetters {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, shutdown := q.Get()
+			if shutdown {
+				shutdownCount.Add(1)
+			}
+		}()
+	}
+	q.ShutDown()
+	wg.Wait()
+	assert.Equal(t, int32(numGetters), shutdownCount.Load())
+}
+
+func TestQueue_ConcurrentAddAndShutDown(t *testing.T) {
+	q := NewQueue[int]()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := range 1000 {
+			q.Add(i)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		q.ShutDown()
+	}()
+	wg.Wait()
+	assert.True(t, q.ShuttingDown())
+}
+
+func TestQueue_ConcurrentLenCalls(t *testing.T) {
+	q := NewQueue[int]()
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 100 {
+				q.Add(1)
+				_ = q.Len()
+			}
+		}()
+	}
+	wg.Wait()
 }

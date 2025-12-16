@@ -75,7 +75,7 @@ func TestCollapsingQueue_ReAddWhileProcessing(t *testing.T) {
 	assert.Equal(t, 0, q.Len())
 }
 
-func TestCollapsingQueue_TouchCalledOnDuplicateNotProcessing(t *testing.T) {
+func TestCollapsingQueue_DuplicateAddWhileNotProcessing(t *testing.T) {
 	q := NewCollapsingQueue[string]()
 	q.Add("item1")
 	q.Add("item1")
@@ -173,16 +173,13 @@ func TestCollapsingQueue_ShutDownWithDrainInterruptedByShutDown(t *testing.T) {
 	q := NewCollapsingQueue[string]()
 	q.Add("item1")
 	item, _ := q.Get()
-	var drainStarted atomic.Bool
 	var drainDone atomic.Bool
 	go func() {
-		drainStarted.Store(true)
 		q.ShutDownWithDrain()
 		drainDone.Store(true)
 	}()
-	assert.Eventually(t, func() bool {
-		return drainStarted.Load()
-	}, testTimeout, testInterval)
+	// Give the goroutine time to start and block in ShutDownWithDrain
+	time.Sleep(50 * time.Millisecond)
 	q.ShutDown()
 	assert.Eventually(t, func() bool {
 		return drainDone.Load()
@@ -213,13 +210,13 @@ func TestCollapsingQueue_ConcurrentAddAndGet(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < numItems; i++ {
+		for i := range numItems {
 			q.Add(i)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		for i := 0; i < numItems; i++ {
+		for range numItems {
 			item, shutdown := q.Get()
 			if !shutdown {
 				received.Add(1)
@@ -229,4 +226,135 @@ func TestCollapsingQueue_ConcurrentAddAndGet(t *testing.T) {
 	}()
 	wg.Wait()
 	assert.Equal(t, int32(numItems), received.Load())
+}
+
+func TestCollapsingQueue_ConcurrentReAddWhileProcessing(t *testing.T) {
+	q := NewCollapsingQueue[int]()
+	var producerWg sync.WaitGroup
+	var consumerWg sync.WaitGroup
+	numWorkers := 5
+	numIterations := 100
+	var processed atomic.Int32
+	for range numWorkers {
+		producerWg.Add(1)
+		go func() {
+			defer producerWg.Done()
+			for range numIterations {
+				q.Add(1)
+			}
+		}()
+	}
+	consumerWg.Add(1)
+	go func() {
+		defer consumerWg.Done()
+		for {
+			item, shutdown := q.Get()
+			if shutdown {
+				return
+			}
+			processed.Add(1)
+			q.Done(item)
+		}
+	}()
+	producerWg.Wait()
+	q.ShutDown()
+	consumerWg.Wait()
+	assert.GreaterOrEqual(t, processed.Load(), int32(1))
+}
+
+func TestCollapsingQueue_MultipleWorkersDone(t *testing.T) {
+	q := NewCollapsingQueue[int]()
+	numItems := 100
+	for i := range numItems {
+		q.Add(i)
+	}
+	var wg sync.WaitGroup
+	var processed atomic.Int32
+	numWorkers := 10
+	for range numWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				item, shutdown := q.Get()
+				if shutdown {
+					return
+				}
+				processed.Add(1)
+				q.Done(item)
+			}
+		}()
+	}
+	assert.Eventually(t, func() bool {
+		return processed.Load() >= int32(numItems)
+	}, testTimeout, testInterval)
+	q.ShutDown()
+	wg.Wait()
+	assert.Equal(t, int32(numItems), processed.Load())
+}
+
+func TestCollapsingQueue_ShutDownWithMultipleBlockedGetters(t *testing.T) {
+	q := NewCollapsingQueue[string]()
+	numGetters := 10
+	var wg sync.WaitGroup
+	var shutdownCount atomic.Int32
+	for range numGetters {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, shutdown := q.Get()
+			if shutdown {
+				shutdownCount.Add(1)
+			}
+		}()
+	}
+	q.ShutDown()
+	wg.Wait()
+	assert.Equal(t, int32(numGetters), shutdownCount.Load())
+}
+
+func TestCollapsingQueue_ConcurrentAddAndShutDown(t *testing.T) {
+	q := NewCollapsingQueue[int]()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := range 1000 {
+			q.Add(i)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		q.ShutDown()
+	}()
+	wg.Wait()
+	assert.True(t, q.ShuttingDown())
+}
+
+func TestCollapsingQueue_ShutDownWithDrainMultipleWorkers(t *testing.T) {
+	q := NewCollapsingQueue[int]()
+	numItems := 50
+	for i := range numItems {
+		q.Add(i)
+	}
+	var wg sync.WaitGroup
+	var processed atomic.Int32
+	numWorkers := 5
+	for range numWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				item, shutdown := q.Get()
+				if shutdown {
+					return
+				}
+				processed.Add(1)
+				q.Done(item)
+			}
+		}()
+	}
+	q.ShutDownWithDrain()
+	wg.Wait()
+	assert.Equal(t, int32(numItems), processed.Load())
 }
