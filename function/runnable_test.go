@@ -29,7 +29,7 @@ func Test_Runnable(t *testing.T) {
 	stringToInt := NewFunctionFromFunc(func(ctx context.Context, arg string) (int, error) {
 		return 1, nil
 	})
-	myRun = NewRunnableFromFunction("a", stringToInt)
+	myRun = NewRunnableFromFunction(stringToInt, "a")
 	assert.NoError(t, myRun.Run(context.Background()))
 	myRun = NewRunnableFromSupplier(NewSupplierFromFunc(func(ctx context.Context) (int, error) {
 		return 1, nil

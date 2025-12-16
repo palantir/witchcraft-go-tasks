@@ -27,7 +27,7 @@ type Runnable interface {
 // NamedRunnable is a Runnable that has a name.
 type NamedRunnable interface {
 	Runnable
-    // Name returns the name for the runnable. A Runnable's name is mostly informational, and generally used to provide a human-readable name for a runnable that can be logged or used for debugging.
+	// Name returns the name for the runnable. A Runnable's name is mostly informational, and generally used to provide a human-readable name for a runnable that can be logged or used for debugging.
 	Name() string
 }
 
@@ -45,7 +45,7 @@ func NewRunnableFromFunc(funcToCall func(ctx context.Context) error) Runnable {
 }
 
 // NewRunnableFromFunction returns a Runnable created from the provided Function[T, R] and argument. The returned Runnable's Run function calls the Apply function of the provided Function with the provided argument, ignores the R value returned by the function, and returns the error returned by the function.
-func NewRunnableFromFunction[T, R any](arg T, function Function[T, R]) Runnable {
+func NewRunnableFromFunction[T, R any](function Function[T, R], arg T) Runnable {
 	return NewRunnableFromConsumer(arg, NewConsumerFromFunction(function))
 }
 
