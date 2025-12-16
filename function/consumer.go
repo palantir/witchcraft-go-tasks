@@ -24,7 +24,7 @@ type Consumer[T any] interface {
 	Accept(ctx context.Context, arg T) error
 }
 
-// ConsumerFunc is a type alias for a function that satisfies the Consumer interface
+// ConsumerFunc is a named type for a function that implements the Consumer interface.
 type ConsumerFunc[T any] func(ctx context.Context, arg T) error
 
 func (f ConsumerFunc[T]) Accept(ctx context.Context, arg T) error {
