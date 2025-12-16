@@ -2,58 +2,83 @@ package workerpool
 
 import (
 	"context"
+	"sync/atomic"
 
+	"github.com/palantir/pkg/metrics"
 	"github.com/palantir/witchcraft-go-logging/wlog/svclog/svc1log"
 	"github.com/palantir/witchcraft-go-logging/wlog/wapp"
-	workqueue "github.com/palantir/witchcraft-go-tasks/internal/queue"
-	"github.com/palantir/witchcraft-go-tracing/wtracing"
+	"github.com/palantir/witchcraft-go-tasks/function"
+	"github.com/palantir/witchcraft-go-tasks/internal/queue"
+	"github.com/palantir/witchcraft-go-tasks/util/async"
+	"github.com/palantir/witchcraft-go-tasks/workerpool/internal"
 )
 
-const maxNumRequeues = 5
+const (
+	cacheMetricName    = "com.palantir.workerpool.workers"
+	enqueuedMetricName = "com.palantir.workerpool.queued"
+)
 
-type defaultWorkerPool[T ElementIdentifier] struct {
-	// elementProcessor ElementProcessor[T]
-	// k8sKeyedErrorHealthCheckSource observability.K8sKeyedErrorHealthCheckSource
-	// numWorkers     int
-	queue              workqueue.CollapsingQueue[T]
-	workerPoolName     string
-	consumerWorkerPool ConsumerWorkerPool[T]
+type defaultWorkerPool[T any] struct {
+	config                        Config
+	queue                         queue.Queue[workerPoolWrapperObject[T]]
+	numberFree                    atomic.Int64
+	totalCount                    atomic.Int64
+	parentContextForWorkerThreads context.Context
+}
+
+type workerPoolWrapperObject[T any] struct {
+	contextToRunFutureWith context.Context
+	underlyingFuture       internal.ComputingFuture[T]
 }
 
 // NewDefaultWorkerPool instantiates a worker pool
-func NewDefaultWorkerPool[T ElementIdentifier](
-	elementProcessor ElementProcessor[T],
-	numWorkers int,
-	queue workqueue.CollapsingQueue[T],
-// k8sKeyedErrorHealthCheckSource observability.K8sKeyedErrorHealthCheckSource,
-	workerPoolName string) K8sWorkerPool[T] {
-	return &defaultWorkerPool[T]{
-		// k8sKeyedErrorHealthCheckSource: k8sKeyedErrorHealthCheckSource,
-		elementProcessor: elementProcessor,
-		queue:            queue,
-		numWorkers:       numWorkers,
-		workerPoolName:   workerPoolName,
+// This worker pool will start with 0 workers and go-routines running
+// It will increase the worker count during job submission iff all workers are working and we are below the maxNumberOfWorkers if set
+// It is the worker pool that is used by the defaultVoidWorkerPool
+// The context that is passed in should have all the given loggers needed
+// If this context ever returns under ctx.Done(), then the queue is shut down and all work is stopped
+func NewDefaultWorkerPool[T any](ctx context.Context, options ...Option) WorkerPool[T] {
+	config := &Config{}
+	for _, option := range options {
+		option(config)
 	}
+	d := &defaultWorkerPool[T]{
+		queue:                         queue.NewQueue[workerPoolWrapperObject[T]](),
+		config:                        *config,
+		parentContextForWorkerThreads: ctx,
+	}
+	d.shutDownQueueIfNeeded()
+	return d
 }
 
-func (d defaultWorkerPool[T]) Start(ctx context.Context) {
-	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("workerPoolName", d.workerPoolName))
-	//for i := 0; i < d.numWorkers; i++ {
-	//	d.startWorkerAsync(ctx, i)
-	// }
+func (d *defaultWorkerPool[T]) Submit(ctxFromClient context.Context, supplier function.Supplier[T]) async.Future[T] {
+	if d.needAdditionalWorker() {
+		d.startWorkerAsync()
+		d.markWorkerCount()
+	}
+	computingFuture := internal.NewDefaultComputingFuture(supplier)
+	workerPoolWrapperObject := workerPoolWrapperObject[T]{
+		contextToRunFutureWith: ctxFromClient,
+		underlyingFuture:       computingFuture,
+	}
+	d.queue.Add(workerPoolWrapperObject)
+	d.markQueueLength()
+	return computingFuture
 }
 
-func (d defaultWorkerPool[T]) Submit(ctx context.Context, element T) {
-	d.queue.Add(element)
+func (d *defaultWorkerPool[T]) SubmitWithCallback(ctxFromClient context.Context, supplier function.Supplier[T], onComplete func(T, error)) {
+	d.Submit(ctxFromClient, function.NewSupplierFromFunc(func(ctx context.Context) (T, error) {
+		result, err := supplier.Get(ctx)
+		onComplete(result, err)
+		return result, err
+	}))
 }
 
-func (d defaultWorkerPool[T]) startWorkerAsync(ctx context.Context, workerID int) {
-	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("workerID", workerID))
-	go d.startWorker(ctx)
-}
-
-func (d defaultWorkerPool[T]) startWorker(ctx context.Context) {
-	wapp.RunWithRecoveryLogging(ctx, d.runWorkerLoop)
+func (d *defaultWorkerPool[T]) startWorker(ctx context.Context) {
+	runFn := func(ctx context.Context) {
+		d.runWorkerLoop(ctx)
+	}
+	wapp.RunWithRecoveryLogging(ctx, runFn)
 	// If we exit for some reason and the queue is not shutting down, retry
 	if d.queue.ShuttingDown() {
 		return
@@ -61,87 +86,77 @@ func (d defaultWorkerPool[T]) startWorker(ctx context.Context) {
 	d.startWorker(ctx)
 }
 
-func (d defaultWorkerPool[T]) runWorkerLoop(ctx context.Context) {
+func (d *defaultWorkerPool[T]) getCurrentCount() int {
+	return int(d.totalCount.Load())
+}
+
+func (d *defaultWorkerPool[T]) startWorkerAsync() {
+	d.totalCount.Add(1)
+	workerID := d.getCurrentCount()
+	ctx := svc1log.WithLoggerParams(d.parentContextForWorkerThreads, svc1log.SafeParam("workerID", workerID))
+	go d.startWorker(ctx)
+}
+func (d *defaultWorkerPool[T]) runWorkerLoop(workerContext context.Context) {
+	// initialSubmitMade is needed so that we ensure that the first submission was tied to the submit that triggered it
+	initialSubmitMade := false
 	for {
-		element, shutdown := d.queue.Get()
+		/// UHO
+		element, shutdown := d.queue.GetWithCallback(func() {
+			if initialSubmitMade {
+				d.numberFree.Add(-1)
+			}
+			initialSubmitMade = true
+		})
 		if shutdown {
-			svc1log.FromContext(ctx).Warn("Queue shutting down; workers stopping.")
+			svc1log.FromContext(workerContext).Warn("Queue shutting down; workers stopping.")
 			return
 		}
-		d.singleProcessAttempt(ctx, element)
-		// wccmetrics.WccMetrics(ctx).QueueLength().WorkerPoolName(d.workerPoolName).Gauge().Update(int64(d.queue.Len()))
+
+		element.underlyingFuture.Compute(element.contextToRunFutureWith)
+		d.markQueueLength()
+		d.numberFree.Add(1)
 	}
 }
 
-func (d defaultWorkerPool[T]) singleProcessAttempt(ctx context.Context, typedElement T) {
-	span, ctx := wtracing.StartSpanFromTracerInContext(ctx, "defaultWorkerPool.runSingleJob")
-	defer span.Finish()
-	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("queueElementIdentifier", typedElement.GetIdentifier()))
-	if err := d.runProcessorSingleTime(ctx, typedElement); err != nil {
-		d.handleProcessError(ctx, typedElement, err)
-		return
+func (d *defaultWorkerPool[T]) needAdditionalWorker() bool {
+	notDoingWorkCount := int(d.numberFree.Load())
+	mapSize := d.getCurrentCount()
+	if d.config.maxNumberOfWorkers != nil && *d.config.maxNumberOfWorkers == mapSize {
+		return false
 	}
-	d.queue.Done(typedElement)
-	// d.queue.Forget(typedElement)
-	// d.k8sKeyedErrorHealthCheckSource.Submit(ctx, typedElement.GetIdentifier(), nil)
-}
-
-func (d defaultWorkerPool[T]) runProcessorSingleTime(ctx context.Context, element T) error {
-	// startTime := time.Now()
-	//defer wccmetrics.WccMetrics(ctx).ProcessElementDuration().
-	//	WorkerPoolName(d.workerPoolName).
-	//	Timer().UpdateSince(startTime)
-	closure := func(ctx context.Context) error {
-		d.consumerWorkerPool.Submit(ctx, element)
-		return d.elementProcessor.ProcessElement(ctx, element)
+	// If everything is working, we must give a new worker
+	if notDoingWorkCount == 0 {
+		return true
 	}
-	return wapp.RunWithRecoveryLoggingWithError(ctx, closure)
-}
-
-func (d defaultWorkerPool[T]) handleProcessError(ctx context.Context, element T, err error) {
-	// d.k8sKeyedErrorHealthCheckSource.Submit(ctx, element.GetIdentifier(), err)
-	//numRequeues := d.queue.NumRequeues(element)
-	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("maxNumRequeues", maxNumRequeues)) //, svc1log.SafeParam("numRequeues", numRequeues))
-	d.queue.Done(element)
-	//if numRequeues == maxNumRequeues {
-	// observability.LogErrorTalkingToK8s(ctx, "Forgetting queue element after multiple failed process attempts.", err)
-	//	d.queue.Forget(element)
-	//} else {
-	// observability.LogErrorTalkingToK8s(ctx, "Failed to process queue element; requeuing.", err)
-	//	d.queue.AddRateLimited(element)
-	//}
-}
-
-type defaultWorkerPool2[T ElementIdentifier] struct {
-	// elementProcessor ElementProcessor[T]
-	// k8sKeyedErrorHealthCheckSource observability.K8sKeyedErrorHealthCheckSource
-	// numWorkers     int
-	queue              workqueue.CollapsingQueue[T]
-	consumerWorkerPool ConsumerWorkerPool[T]
-}
-
-func NNN[T ElementIdentifier](ctx context.Context, consumerWorkerPool ConsumerWorkerPool[T]) *defaultWorkerPool2[T] {
-	d := &defaultWorkerPool2[T]{
-		queue:              workqueue.NewCollapsingQueue[T](),
-		consumerWorkerPool: consumerWorkerPool,
+	// Compare workers about to start vs the queue size, before and after computation
+	length := d.queue.Len()
+	if notDoingWorkCount <= length {
+		return true
 	}
-	go d.runWorkerLoop(ctx)
-	return d
+	return false
 }
 
-func (d defaultWorkerPool2[T]) Submit(ctx context.Context, element T) {
-	d.queue.Add(element)
+func (d *defaultWorkerPool[T]) markWorkerCount() {
+	if len(d.config.tags) > 0 {
+		metrics.FromContext(d.parentContextForWorkerThreads).Gauge(cacheMetricName, d.config.tags...).Update(int64(d.getCurrentCount()))
+	}
 }
 
-func (d defaultWorkerPool2[T]) runWorkerLoop(ctx context.Context) {
-	for {
-		element, shutdown := d.queue.Get()
-		if shutdown {
-			svc1log.FromContext(ctx).Warn("Queue shutting down; workers stopping.")
-			return
+func (d *defaultWorkerPool[T]) markQueueLength() {
+	if len(d.config.tags) > 0 {
+		metrics.FromContext(d.parentContextForWorkerThreads).Gauge(enqueuedMetricName, d.config.tags...).Update(int64(d.queue.Len()))
+	}
+}
+
+func (d *defaultWorkerPool[T]) shutDownQueueIfNeeded() {
+	go func() {
+		for {
+			select {
+			case <-d.parentContextForWorkerThreads.Done():
+				d.queue.ShutDown()
+				svc1log.FromContext(d.parentContextForWorkerThreads).Warn("Worker pool shut down, shutting down the queue")
+				return
+			}
 		}
-		// have the single de-duped element
-		nowWeHaveAFuture := d.consumerWorkerPool.Submit(ctx, element)
-		// wccmetrics.WccMetrics(ctx).QueueLength().WorkerPoolName(d.workerPoolName).Gauge().Update(int64(d.queue.Len()))
-	}
+	}()
 }

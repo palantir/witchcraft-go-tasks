@@ -1,238 +1,315 @@
-package workerpool_test
+package workerpool
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/palantir/pkg/metrics"
+	"github.com/palantir/witchcraft-go-tasks/function"
+	"github.com/palantir/witchcraft-go-tasks/util/async"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	observability_mock "github.palantir.build/deployability/witchcraft-controller-commons/internal/generated/mocks/github.palantir.build/deployability/witchcraft-controller-commons/observability"
-	workerpool_mock "github.palantir.build/deployability/witchcraft-controller-commons/internal/generated/mocks/github.palantir.build/deployability/witchcraft-controller-commons/workerpool"
-	"github.palantir.build/deployability/witchcraft-controller-commons/pkg/testutil"
-	"github.palantir.build/deployability/witchcraft-controller-commons/workerpool"
-	"k8s.io/client-go/util/workqueue"
+	"github.com/stretchr/testify/require"
 )
 
-const maxNumRequeues = 5
-
-var (
-	service1Elem   = testElement{WitchcraftServiceName: "service1"}
-	service2Elem   = testElement{WitchcraftServiceName: "service2Elem"}
-	offsetDuration = time.Millisecond * 50
-	baseDuration   = time.Millisecond * 100
-)
-
-// Element in queue
-type testElement struct {
-	WitchcraftServiceName      string
-	WitchcraftServiceNamespace string
+func Test_SerialWorkerpoolFetching(t *testing.T) {
+	workerPool := NewDefaultWorkerPool[string](context.Background())
+	workerPoolTyped := workerPool.(*defaultWorkerPool[string])
+	simpleGet := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+		return "a", nil
+	})
+	// Before doing anything
+	assert.Equal(t, 0, workerPoolTyped.queue.Len())
+	assert.Equal(t, 0, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 0, int(workerPoolTyped.totalCount.Load()))
+	// Single submit
+	f1 := workerPool.Submit(context.Background(), simpleGet)
+	result, err := f1.Get(context.Background())
+	assert.NoError(t, err)
+	assert.Equal(t, "a", result)
+	assert.Equal(t, 0, workerPoolTyped.queue.Len())
+	assert.Equal(t, 1, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 1, int(workerPoolTyped.totalCount.Load()))
+	// And another submit
+	f1 = workerPool.Submit(context.Background(), simpleGet)
+	result, err = f1.Get(context.Background())
+	assert.NoError(t, err)
+	assert.Equal(t, "a", result)
+	assert.Equal(t, 0, workerPoolTyped.queue.Len())
+	assert.Equal(t, 1, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 1, int(workerPoolTyped.totalCount.Load()))
 }
 
-func (t testElement) GetIdentifier() string {
-	return t.WitchcraftServiceName
+func Test_SerialWorkerpoolFetching_WorkerCap(t *testing.T) {
+	start := time.Now()
+	workerPool := NewDefaultWorkerPool[string](context.Background(), WithMaxNumberOfThreads(2))
+	workerPoolTyped := workerPool.(*defaultWorkerPool[string])
+	simpleGet := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+		time.Sleep(time.Millisecond * 500)
+		return "a", nil
+	})
+	// Single submit
+	f1 := workerPool.Submit(context.Background(), simpleGet)
+	time.Sleep(time.Millisecond * 100)
+	assert.Equal(t, 0, workerPoolTyped.queue.Len())
+	assert.Equal(t, 0, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 1, int(workerPoolTyped.totalCount.Load()))
+
+	f2 := workerPool.Submit(context.Background(), simpleGet)
+	time.Sleep(time.Millisecond * 100)
+	assert.Equal(t, 0, workerPoolTyped.queue.Len())
+	assert.Equal(t, 0, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 2, int(workerPoolTyped.totalCount.Load()))
+	f3 := workerPool.Submit(context.Background(), simpleGet)
+	time.Sleep(time.Millisecond * 100)
+	assert.Equal(t, 1, workerPoolTyped.queue.Len())
+	assert.Equal(t, 0, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 2, int(workerPoolTyped.totalCount.Load()))
+	result, err := f1.Get(context.Background())
+	assert.NoError(t, err)
+	assert.Equal(t, "a", result)
+	result, err = f2.Get(context.Background())
+	assert.NoError(t, err)
+	assert.Equal(t, "a", result)
+	timeInRange(t, start, 999, 500)
+	result, err = f3.Get(context.Background())
+	assert.NoError(t, err)
+	assert.Equal(t, "a", result)
+	time.Sleep(time.Millisecond * 10)
+	timeInRange(t, start, 1499, 1001)
+	assert.Equal(t, 0, workerPoolTyped.queue.Len())
+	assert.Equal(t, 2, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 2, int(workerPoolTyped.totalCount.Load()))
 }
 
-// Witchcraft worker pool can process a single element
-func TestWitchcraftWorkerpoolConsumeSingleElement(t *testing.T) {
-	ctx := testutil.GetTestContext()
-	processor := new(workerpool_mock.ElementProcessor[testElement])
-	processor.On("ProcessElement", mock.Anything, service1Elem).Return(nil).Times(1)
-	keyedErrorSubmitter := new(observability_mock.K8sKeyedErrorHealthCheckSource)
-	keyedErrorSubmitter.On("Submit", mock.Anything, service1Elem.WitchcraftServiceName, nil).Times(1)
-	defer mock.AssertExpectationsForObjects(t, processor, keyedErrorSubmitter)
-
-	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
-	workers := workerpool.NewDefaultWorkerPool[testElement](processor, 5, queue, keyedErrorSubmitter, "testPool")
-	workers.Start(ctx)
-	workers.Submit(ctx, service1Elem)
-	time.Sleep(offsetDuration)
-	queue.ShutDown()
-}
-
-// Witchcraft worker pool can process multiple elements
-func TestWitchcraftWorkerpoolConsumeDifferentElements(t *testing.T) {
-	ctx := testutil.GetTestContext()
-
-	keyedErrorSubmitter := new(observability_mock.K8sKeyedErrorHealthCheckSource)
-	keyedErrorSubmitter.On("Submit", mock.Anything, service1Elem.WitchcraftServiceName, nil).Times(1)
-	keyedErrorSubmitter.On("Submit", mock.Anything, service2Elem.WitchcraftServiceName, nil).Times(1)
-	processor := new(workerpool_mock.ElementProcessor[testElement])
-	processor.On("ProcessElement", mock.Anything, service1Elem).Return(nil).Times(1)
-	processor.On("ProcessElement", mock.Anything, service2Elem).Return(nil).Times(1)
-	defer mock.AssertExpectationsForObjects(t, keyedErrorSubmitter, processor)
-
-	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
-	workers := workerpool.NewDefaultWorkerPool[testElement](processor, 5, queue, keyedErrorSubmitter, "testPool")
-
-	workers.Start(ctx)
-	workers.Submit(ctx, service1Elem)
-	workers.Submit(ctx, service2Elem)
-	time.Sleep(offsetDuration)
-	queue.ShutDown()
-}
-
-// Witchcraft worker pool won't attempt to process the same element in parallel
-func TestWitchcraftWorkerpoolConsumeSameElements(t *testing.T) {
-	keyedErrorSubmitter := new(observability_mock.K8sKeyedErrorHealthCheckSource)
-	keyedErrorSubmitter.On("Submit", mock.Anything, service1Elem.WitchcraftServiceName, nil).Times(1)
-	processor := new(workerpool_mock.ElementProcessor[testElement])
-	processor.On("ProcessElement", mock.Anything, service1Elem).Return(nil).Times(1)
-	defer mock.AssertExpectationsForObjects(t, keyedErrorSubmitter, processor)
-
-	ctx := testutil.GetTestContext()
-	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
-	workers := workerpool.NewDefaultWorkerPool[testElement](processor, 5, queue, keyedErrorSubmitter, "testPool")
-
-	workers.Start(ctx)
-	workers.Submit(ctx, service1Elem)
-	workers.Submit(ctx, service1Elem)
-	time.Sleep(offsetDuration)
-	queue.ShutDown()
-}
-
-// Witchcraft worker pool will requeue elements upon processing failure
-func TestWitchcraftWorkerpoolRetryOnJobCreationError(t *testing.T) {
-	err := errors.New("bad")
-	keyedErrorSubmitter := new(observability_mock.K8sKeyedErrorHealthCheckSource)
-	keyedErrorSubmitter.On("Submit", mock.Anything, service1Elem.WitchcraftServiceName, nil).Times(1)
-	keyedErrorSubmitter.On("Submit", mock.Anything, service1Elem.WitchcraftServiceName, err).Times(1)
-	processor := new(workerpool_mock.ElementProcessor[testElement])
-	processor.On("ProcessElement", mock.Anything, service1Elem).Return(err).Times(1)
-	processor.On("ProcessElement", mock.Anything, service1Elem).Return(nil).Times(1)
-	defer mock.AssertExpectationsForObjects(t, keyedErrorSubmitter, processor)
-
-	ctx := testutil.GetTestContext()
-	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
-	workers := workerpool.NewDefaultWorkerPool[testElement](processor, 5, queue, keyedErrorSubmitter, "testPool")
-
-	workers.Start(ctx)
-	workers.Submit(ctx, service1Elem)
-	time.Sleep(baseDuration)
-	queue.ShutDown()
-}
-
-// Witchcraft workerpool will give up requeuing after multiple failures
-func TestWitchcraftWorkerpoolRetryGivesUp(t *testing.T) {
-	err := errors.New("bad")
-	keyedErrorSubmitter := new(observability_mock.K8sKeyedErrorHealthCheckSource)
-	keyedErrorSubmitter.On("Submit", mock.Anything, service1Elem.WitchcraftServiceName, err).Times(maxNumRequeues + 1)
-	processor := new(workerpool_mock.ElementProcessor[testElement])
-	processor.On("ProcessElement", mock.Anything, service1Elem).Return(err).Times(maxNumRequeues + 1)
-	defer mock.AssertExpectationsForObjects(t, keyedErrorSubmitter, processor)
-
-	ctx := testutil.GetTestContext()
-	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
-	workers := workerpool.NewDefaultWorkerPool[testElement](processor, 5, queue, keyedErrorSubmitter, "testPool")
-
-	workers.Start(ctx)
-	workers.Submit(ctx, service1Elem)
-	time.Sleep(offsetDuration + baseDuration*(maxNumRequeues*2))
-	queue.ShutDown()
-}
-
-func TestCanHandlePanicInProcessor(t *testing.T) {
-	keyedErrorSubmitter := new(observability_mock.K8sKeyedErrorHealthCheckSource)
-	errCheck := func(err error) bool {
-		return err != nil
+func Test_WorkerpoolFetching_NoCapThroughput(t *testing.T) {
+	start := time.Now()
+	workerPool := NewDefaultWorkerPool[string](context.Background())
+	simpleGet := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+		return "a", nil
+	})
+	var toHold []async.Future[string]
+	for i := 1; i <= 10000; i++ {
+		toHold = append(toHold, workerPool.Submit(context.Background(), simpleGet))
 	}
-	keyedErrorSubmitter.On("Submit", mock.Anything, service1Elem.WitchcraftServiceName, mock.MatchedBy(errCheck)).Times(6)
-	panicProcessor := &panicProcessor{
-		shouldPanic: true,
+	assert.Equal(t, len(toHold), 10000)
+	for _, holdMe := range toHold {
+		result, err := holdMe.Get(context.Background())
+		assert.NoError(t, err)
+		assert.Equal(t, "a", result)
 	}
-	defer mock.AssertExpectationsForObjects(t, keyedErrorSubmitter)
-
-	ctx := testutil.GetTestContext()
-	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
-	workers := workerpool.NewDefaultWorkerPool[testElement](panicProcessor, 1, queue, keyedErrorSubmitter, "testPool")
-	workers.Start(ctx)
-	workers.Submit(ctx, service1Elem)
-	time.Sleep(time.Millisecond * 200)
-	// Make sure that we are called 6 times, this ensures that a thread will not die and that an element will be retried
-	assert.Equal(t, 6, panicProcessor.callCount)
-	// Stop the panic and make sure we can process no error
-	panicProcessor.shouldPanic = false
-	keyedErrorSubmitter.On("Submit", mock.Anything, service1Elem.WitchcraftServiceName, nil).Times(1)
-	workers.Submit(ctx, service1Elem)
-	time.Sleep(time.Millisecond * 200)
-	assert.Equal(t, 7, panicProcessor.callCount)
-	assert.True(t, panicProcessor.finished)
-	// Now ensure the shut down will no longer process
-	queue.ShutDown()
-	workers.Submit(ctx, service1Elem)
-	time.Sleep(time.Millisecond * 200)
-	assert.Equal(t, 7, panicProcessor.callCount)
+	timeInRange(t, start, 1000, 0)
 }
 
-type panicProcessor struct {
-	callCount   int
-	shouldPanic bool
-	finished    bool
-}
-
-func (p *panicProcessor) ProcessElement(ctx context.Context, element testElement) error {
-	p.callCount = p.callCount + 1
-	if p.shouldPanic {
-		panic("hit a panic")
+func Test_WorkerpoolFetching_NoCap2ScaleUps(t *testing.T) {
+	start := time.Now()
+	workerPool := NewDefaultWorkerPool[string](context.Background())
+	workerPoolTyped := workerPool.(*defaultWorkerPool[string])
+	timeToSleep := int64(1500)
+	simpleGet := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+		time.Sleep(time.Millisecond * time.Duration(timeToSleep))
+		return "a", nil
+	})
+	// Single submit
+	var toHold []async.Future[string]
+	countToSubmit := 1000
+	for i := 1; i <= countToSubmit; i++ {
+		toHold = append(toHold, workerPool.Submit(context.Background(), simpleGet))
 	}
-	p.finished = true
-	return nil
+	time.Sleep(time.Millisecond * 50)
+	require.Equal(t, 0, workerPoolTyped.queue.Len(), time.Now().String())
+	assert.Equal(t, 0, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 1000, int(workerPoolTyped.totalCount.Load()))
+	for _, holdMe := range toHold {
+		result, err := holdMe.Get(context.Background())
+		assert.NoError(t, err)
+		assert.Equal(t, "a", result)
+	}
+	assert.Equal(t, 1000, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 1000, int(workerPoolTyped.totalCount.Load()))
+	timeInRange(t, start, timeToSleep*2, timeToSleep)
+	assert.Equal(t, 0, workerPoolTyped.queue.Len())
+
+	// And another mass submit does nothing
+	toHold = []async.Future[string]{}
+	for i := 1; i <= 1000; i++ {
+		toHold = append(toHold, workerPool.Submit(context.Background(), simpleGet))
+	}
+	time.Sleep(time.Millisecond * 50)
+	assert.True(t, workerPoolTyped.totalCount.Load() < 1500)
+	assert.Equal(t, 0, workerPoolTyped.queue.Len())
+	for _, holdMe := range toHold {
+		result, err := holdMe.Get(context.Background())
+		assert.NoError(t, err)
+		assert.Equal(t, "a", result)
+	}
+	assert.Equal(t, 1000, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 1000, int(workerPoolTyped.totalCount.Load()))
+	timeInRange(t, start, timeToSleep*3, timeToSleep*2)
 }
 
-func TestCanHandlePanicInQueueInternal(t *testing.T) {
-	ctx := testutil.GetTestContext()
-	panicQueue := panicQueue{}
-	workers := workerpool.NewDefaultWorkerPool[testElement](nil, 1, &panicQueue, nil, "testPool")
-	workers.Start(ctx)
-	workers.Submit(ctx, service1Elem)
-	time.Sleep(offsetDuration)
-	assert.True(t, panicQueue.getCount > 1)
+func Test_WorkerpoolFetching_LargeScaleUp(t *testing.T) {
+	start := time.Now()
+	workerPool := NewDefaultWorkerPool[string](context.Background())
+	workerPoolTyped := workerPool.(*defaultWorkerPool[string])
+	timeToSleep := int64(1500)
+	simpleGet := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+		time.Sleep(time.Millisecond * time.Duration(timeToSleep))
+		return "a", nil
+	})
+	// Single submit
+	var toHold []async.Future[string]
+	countToSubmit := 10000
+	for i := 1; i <= countToSubmit; i++ {
+		toHold = append(toHold, workerPool.Submit(context.Background(), simpleGet))
+	}
+	time.Sleep(time.Millisecond * 50)
+	require.Equal(t, 0, workerPoolTyped.queue.Len(), time.Now().String())
+	assert.Equal(t, 0, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, countToSubmit, int(workerPoolTyped.totalCount.Load()))
+	for _, holdMe := range toHold {
+		result, err := holdMe.Get(context.Background())
+		assert.NoError(t, err)
+		assert.Equal(t, "a", result)
+	}
+	assert.Equal(t, countToSubmit, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, countToSubmit, int(workerPoolTyped.totalCount.Load()))
+	timeInRange(t, start, timeToSleep*2, timeToSleep)
+	assert.Equal(t, 0, workerPoolTyped.queue.Len())
 }
 
-type panicQueue struct {
-	getCount int
+func Test_SerialWorkerpoolFetching_WithPanics(t *testing.T) {
+	workerPool := NewDefaultWorkerPool[string](context.Background(), WithMaxNumberOfThreads(1))
+	workerPoolTyped := workerPool.(*defaultWorkerPool[string])
+	noPanicYet := true
+	simpleGet := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+		if noPanicYet {
+			noPanicYet = false
+			panic("p")
+		}
+		return "a", nil
+	})
+	// Before doing anything
+	assert.Equal(t, 0, workerPoolTyped.queue.Len())
+	assert.Equal(t, 0, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 0, int(workerPoolTyped.totalCount.Load()))
+	// Single submit
+	f1 := workerPool.Submit(context.Background(), simpleGet)
+	result, err := f1.Get(context.Background())
+	assert.Error(t, err)
+	assert.Equal(t, "", result)
+	assert.Equal(t, 1, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 1, int(workerPoolTyped.totalCount.Load()))
+	// And another submit
+	f1 = workerPool.Submit(context.Background(), simpleGet)
+	result, err = f1.Get(context.Background())
+	assert.NoError(t, err)
+	assert.Equal(t, "a", result)
+	assert.Equal(t, 1, int(workerPoolTyped.numberFree.Load()))
+	assert.Equal(t, 1, int(workerPoolTyped.totalCount.Load()))
 }
 
-func (p *panicQueue) ShutDownWithDrain() {
-	panic("implement me")
+func Test_CanSubmitWithMetrics(t *testing.T) {
+	ctxWithRegistry, registry := getContextWithRegistry()
+
+	workerPool := NewDefaultWorkerPool[string](ctxWithRegistry, WithMetricTags(metrics.Tags{metrics.MustNewTag("k", "v")}))
+	simpleGet := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+		return "a", nil
+	})
+	// Single submit
+	f1 := workerPool.Submit(context.Background(), simpleGet)
+	result, err := f1.Get(context.Background())
+	assert.NoError(t, err)
+	assert.Equal(t, "a", result)
+	workersReported := false
+	queueLengthReported := false
+	visitor := func(name string, tags metrics.Tags, value metrics.MetricVal) {
+		valueAsCounter := value.Values()
+		if name == cacheMetricName {
+			workersReported = true
+			assert.Equal(t, map[string]interface{}{"value": int64(1)}, valueAsCounter)
+		} else if name == enqueuedMetricName {
+			queueLengthReported = true
+			assert.Equal(t, map[string]interface{}{"value": int64(0)}, valueAsCounter)
+		} else {
+			assert.Fail(t, "unknown metric encountered", name)
+		}
+		assert.Equal(t, 1, len(tags))
+		userTag := tags[0]
+		assert.Equal(t, metrics.MustNewTag("k", "v"), userTag)
+	}
+	registry.Each(visitor)
+	assert.True(t, workersReported)
+	assert.True(t, queueLengthReported)
 }
 
-func (p *panicQueue) Add(item interface{}) {}
+func Test_WorkerPoolDedupesParentContextCancelation(t *testing.T) {
+	// We submit no cancel first
+	workerPool := NewDefaultWorkerPool[string](context.Background())
+	getThatRespectsDoneContext := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "a", nil
+	})
+	ctx := context.Background()
+	ctxThatIsDone, cancel := context.WithCancel(ctx)
+	cancel()
+	// Single submit
+	f1 := workerPool.Submit(ctx, getThatRespectsDoneContext)
+	result, err := f1.Get(context.Background())
+	assert.NoError(t, err)
+	assert.Equal(t, "a", result)
+	// And now the broken one fails
+	f1 = workerPool.Submit(ctxThatIsDone, getThatRespectsDoneContext)
+	result, err = f1.Get(context.Background())
+	assert.Error(t, err)
+	assert.Equal(t, "", result)
 
-func (p *panicQueue) Len() int {
-	panic("implement me")
+	// Now visa versa, just broke
+	workerPool = NewDefaultWorkerPool[string](context.Background())
+	f1 = workerPool.Submit(ctxThatIsDone, getThatRespectsDoneContext)
+	result, err = f1.Get(context.Background())
+	assert.Error(t, err)
+	assert.Equal(t, "", result)
+	// And now the worker is just ruined
+	f1 = workerPool.Submit(ctx, getThatRespectsDoneContext)
+	result, err = f1.Get(context.Background())
+	assert.NoError(t, err)
+	assert.Equal(t, "a", result)
 }
 
-func (p *panicQueue) Get() (item interface{}, shutdown bool) {
-	p.getCount = p.getCount + 1
-	panic("nope")
+func Test_WorkerPoolStopsProcessingIfParentContextStopped(t *testing.T) {
+	// We submit no cancel first
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	workerPool := NewDefaultWorkerPool[string](ctx)
+	workerPoolTyped := workerPool.(*defaultWorkerPool[string])
+	getFunc := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+		return "a", nil
+	})
+	// Single submit
+	f1 := workerPool.Submit(context.Background(), getFunc)
+	result, err := f1.Get(context.Background())
+	assert.NoError(t, err)
+	assert.Equal(t, "a", result)
+	// And now stop it
+	assert.False(t, workerPoolTyped.queue.ShuttingDown())
+	cancel()
+	time.Sleep(time.Millisecond * 100)
+	assert.True(t, workerPoolTyped.queue.ShuttingDown())
 }
 
-func (p *panicQueue) Done(item interface{}) {
-	panic("implement me")
+func timeInRange(t *testing.T, start time.Time, milliLessThan, milliMoreThan int64) {
+	timeTaken := time.Now().Sub(start)
+	assert.True(t, timeTaken.Milliseconds() < milliLessThan, fmt.Sprintf("time taken: %d compared to milliLessThan: %d", timeTaken.Milliseconds(), milliLessThan))
+	assert.True(t, timeTaken.Milliseconds() > milliMoreThan, fmt.Sprintf("time taken: %d compared to milliMoreThan: %d", timeTaken.Milliseconds(), milliMoreThan))
 }
 
-func (p *panicQueue) ShutDown() {
-	panic("implement me")
-}
-
-func (p *panicQueue) ShuttingDown() bool {
-	return false
-}
-
-func (p *panicQueue) AddAfter(item interface{}, duration time.Duration) {
-	panic("implement me")
-}
-
-func (p *panicQueue) AddRateLimited(item interface{}) {
-	panic("implement me")
-}
-
-func (p *panicQueue) Forget(item interface{}) {
-	panic("implement me")
-}
-
-func (p *panicQueue) NumRequeues(item interface{}) int {
-	panic("implement me")
+func getContextWithRegistry() (context.Context, metrics.Registry) {
+	registry := metrics.NewRootMetricsRegistry()
+	ctx := context.Background()
+	ctx = metrics.WithRegistry(ctx, registry)
+	return ctx, registry
 }

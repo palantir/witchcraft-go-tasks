@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package workqueue
+package queue
 
 // queue is a slice which implements Queue.
 type queueWrapper[T comparable] []T
