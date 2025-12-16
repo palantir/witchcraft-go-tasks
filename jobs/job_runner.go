@@ -35,6 +35,7 @@ func NewDefaultJobRunner(keyedErrorHealthCheckSource window.KeyedErrorHealthChec
 	}
 }
 
+// StartJobs starts all of the provided jobs. Creates a new goroutine for each job.
 func (d defaultJobRunner) StartJobs(ctx context.Context, jobs []Job) {
 	for _, job := range jobs {
 		d.startJobAsync(ctx, job)
