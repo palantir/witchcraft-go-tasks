@@ -39,7 +39,7 @@ func (f RunnableFunc) Run(ctx context.Context) error {
 	return f(ctx)
 }
 
-// NewRunnableFromFunc creates an interface of Runnable by casing this given function to a RunnableFunc
+// NewRunnableFromFunc creates an interface of Runnable by using type conversion to convertthe provided function to a RunnableFunc.
 func NewRunnableFromFunc(funcToCall func(ctx context.Context) error) Runnable {
 	return RunnableFunc(funcToCall)
 }
