@@ -20,20 +20,20 @@ import (
 
 // Supplier is a generic interface for applying a function that returns type R
 // Decorated with a ctx context.Context for input and an error for returning
-type Supplier[T any] interface {
-	Get(ctx context.Context) (T, error)
+type Supplier[R any] interface {
+	Get(ctx context.Context) (R, error)
 }
 
 // SupplierFunc is a named type for a function that implements the Supplier interface.
-type SupplierFunc[T any] func(ctx context.Context) (T, error)
+type SupplierFunc[R any] func(ctx context.Context) (R, error)
 
-func (f SupplierFunc[T]) Get(ctx context.Context) (T, error) {
+func (f SupplierFunc[R]) Get(ctx context.Context) (R, error) {
 	return f(ctx)
 }
 
 // NewSupplierFromFunc returns a Supplier[T] by by using type conversion to convert the provided function to a  SupplierFunc.
-func NewSupplierFromFunc[T any](funcToCall func(ctx context.Context) (T, error)) Supplier[T] {
-	return SupplierFunc[T](funcToCall)
+func NewSupplierFromFunc[R any](funcToCall func(ctx context.Context) (R, error)) Supplier[R] {
+	return SupplierFunc[R](funcToCall)
 }
 
 // NewSupplierFromFunction is a utility function that will create a Supplier[R] given an arg and a Function[T,R]
@@ -44,8 +44,8 @@ func NewSupplierFromFunction[T any, R any](arg T, function Function[T, R]) Suppl
 }
 
 // NewSupplierFromValue is a utility function that will create a Supplier[T] given a value of type T
-func NewSupplierFromValue[T any](value T) Supplier[T] {
-	return NewSupplierFromFunc(func(_ context.Context) (T, error) {
+func NewSupplierFromValue[R any](value R) Supplier[R] {
+	return NewSupplierFromFunc(func(_ context.Context) (R, error) {
 		return value, nil
 	})
 }
