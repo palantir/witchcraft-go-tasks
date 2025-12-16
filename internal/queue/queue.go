@@ -14,7 +14,9 @@
 
 package queue
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+)
 
 // Queue is a generic work queue that provides blocking Get operations
 // and graceful shutdown capabilities. Items are processed in FIFO order.
