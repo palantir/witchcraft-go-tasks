@@ -18,15 +18,35 @@ import (
 	"sync/atomic"
 )
 
-// Queue is a generic work queue that provides blocking Get operations
+// Queue is a thread-safe generic work queue that provides blocking Get operations
 // and graceful shutdown capabilities. Items are processed in FIFO order.
+//
+// Unlike CollapsingQueue, this queue does not deduplicate items - each Add() results
+// in a corresponding Get(). This is suitable for task queues where every submitted
+// item must be processed exactly once.
+//
+// The type parameter T can be any type since no comparison is needed.
 type Queue[T any] interface {
+	// Add enqueues an item for processing. If the queue is shutting down,
+	// the item is silently ignored.
 	Add(item T)
+	// Len returns the current number of items waiting in the queue. This is
+	// informational only and should not be used for synchronization decisions.
 	Len() int
+	// Get blocks until an item is available and returns it. If shutdown is true,
+	// the queue has been shut down and the caller should exit their processing loop.
 	Get() (item T, shutdown bool)
+	// GetWithCallback is like Get but invokes the callback while holding the queue
+	// lock, before returning. This can be used to perform atomic operations when
+	// an item is dequeued.
 	GetWithCallback(callback func()) (item T, shutdown bool)
+	// ShutDown initiates shutdown. New Add() calls are ignored. Blocked Get() calls
+	// will return with shutdown=true once the queue is empty.
 	ShutDown()
+	// ShutDownWithDrain initiates shutdown and blocks until all queued items have
+	// been retrieved via Get(). Can be interrupted by calling ShutDown().
 	ShutDownWithDrain()
+	// ShuttingDown returns true if ShutDown() or ShutDownWithDrain() has been called.
 	ShuttingDown() bool
 }
 
