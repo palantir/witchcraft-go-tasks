@@ -12,25 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package jobs
+package function
 
 import (
 	"context"
-	"time"
+	"testing"
 
-	"github.com/palantir/witchcraft-go-tasks/function"
+	"github.com/stretchr/testify/assert"
 )
 
-// Job is a simple interface for running an operation
-type Job interface {
-	function.NamedRunnable
-	ShouldStartImmediately(ctx context.Context) bool
-	GetInterval(ctx context.Context) time.Duration
-	// LogError is the called if the job returns an error
-	LogError(ctx context.Context, err error)
+func Test_Consumer(t *testing.T) {
+	stringToInt := NewFunctionFromFunc(func(ctx context.Context, arg string) (int, error) {
+		return 1, nil
+	})
+	consumer := NewConsumerFromFunction(stringToInt)
+	err := consumer.Accept(context.Background(), "a")
+	assert.NoError(t, err)
 }
 
-// JobRunner is an interface for safely running all the specified jobs discussed above
-type JobRunner interface {
-	StartJobs(ctx context.Context, jobs []Job)
+func Test_ConsumerFromFunc(t *testing.T) {
+	var called bool
+	consumer := NewConsumerFromFunc(func(ctx context.Context, arg string) error {
+		called = true
+		return nil
+	})
+	err := consumer.Accept(context.Background(), "test")
+	assert.NoError(t, err)
+	assert.True(t, called)
 }

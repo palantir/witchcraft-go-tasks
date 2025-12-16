@@ -18,6 +18,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/palantir/witchcraft-go-tasks/function"
 	"github.com/palantir/witchcraft-go-tasks/internal/testcontext"
 	"github.com/stretchr/testify/assert"
 )
@@ -37,7 +38,7 @@ func TestForeverRunnable(t *testing.T) {
 		close(started2)
 		panic("oops!")
 	})
-	runnable := NewForever("", []Runnable{runnable1, runnable2})
+	runnable := NewForever("", []function.NamedRunnable{runnable1, runnable2})
 
 	runnableExited := make(chan struct{})
 	defer func() {

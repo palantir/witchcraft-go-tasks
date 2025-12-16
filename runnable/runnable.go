@@ -16,16 +16,12 @@ package runnable
 
 import (
 	"context"
+
+	"github.com/palantir/witchcraft-go-tasks/function"
 )
 
 // RunFn is the function type for a runnable.
 type RunFn func(ctx context.Context) error
-
-// Runnable is a named object that can be run.
-type Runnable interface {
-	Run(ctx context.Context) error
-	Name() string
-}
 
 type genericRunnable struct {
 	name  string
@@ -43,7 +39,7 @@ type genericRunnable struct {
 //	runnable := New(name, func(ctx context.Context) error {
 //		/* stuff to be run */
 //	})
-func New(name string, runFn RunFn, wrappers ...Wrapper) Runnable {
+func New(name string, runFn RunFn, wrappers ...Wrapper) function.NamedRunnable {
 	runnable := &genericRunnable{
 		name:  name,
 		runFn: runFn,

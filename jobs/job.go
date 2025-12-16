@@ -19,19 +19,19 @@ import (
 	"time"
 
 	"github.com/palantir/witchcraft-go-logging/wlog/svclog/svc1log"
-	"github.com/palantir/witchcraft-go-tasks/runnable"
+	"github.com/palantir/witchcraft-go-tasks/function"
 )
 
 type defaultJob struct {
 	name             string
-	runnable         runnable.Runnable
+	runnable         function.Runnable
 	interval         time.Duration
 	logError         func(ctx context.Context, err error)
 	startImmediately bool
 }
 
 // NewDefaultJob returns a default Job implementation with the provided name and runFunc
-func NewDefaultJob(name string, runnable runnable.Runnable, options ...JobOption) Job {
+func NewDefaultJob(name string, runnable function.Runnable, options ...JobOption) Job {
 	defaultJob := &defaultJob{
 		name:     name,
 		runnable: runnable,
