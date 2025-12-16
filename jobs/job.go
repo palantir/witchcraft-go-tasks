@@ -30,7 +30,7 @@ type defaultJob struct {
 	startImmediately bool
 }
 
-// NewDefaultJob returns a default Job implementation with the provided name and runFunc
+// NewDefaultJob returns a default Job implementation with the provided name and runnable configured using the provided options.
 func NewDefaultJob(name string, runnable function.Runnable, options ...JobOption) Job {
 	defaultJob := &defaultJob{
 		name:     name,
