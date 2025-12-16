@@ -22,6 +22,7 @@ type Queue[T comparable] interface {
 	Add(item T)
 	Len() int
 	Get() (item T, shutdown bool)
+	GetWithCallback(callback func()) (item T, shutdown bool)
 	ShutDown()
 	ShutDownWithDrain()
 	ShuttingDown() bool
@@ -81,7 +82,20 @@ func (q *queue[T]) Len() int {
 // the caller should end their goroutine. You must call Done with item when you
 // have finished processing it.
 func (q *queue[T]) Get() (item T, shutdown bool) {
+	return q.GetWithCallback(nil)
+}
+
+// GetWithCallback blocks until it can return an item to be processed. If shutdown = true,
+// the caller should end their goroutine. You must call Done with item when you
+// have finished processing it.
+func (q *queue[T]) GetWithCallback(callback func()) (item T, shutdown bool) {
 	q.cond.L.Lock()
+	defer func() {
+		if callback != nil {
+			callback()
+		}
+		q.cond.L.Unlock()
+	}()
 	defer q.cond.L.Unlock()
 	for q.queue.Len() == 0 && !q.shuttingDown {
 		q.cond.Wait()

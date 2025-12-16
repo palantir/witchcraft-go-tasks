@@ -45,7 +45,7 @@ func Test_SerialWorkerpoolFetching_WorkerCap(t *testing.T) {
 	start := time.Now()
 	workerPool := NewDefaultWorkerPool[string](context.Background(), WithMaxNumberOfThreads(2))
 	workerPoolTyped := workerPool.(*defaultWorkerPool[string])
-	simpleGet := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+	simpleGet := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
 		time.Sleep(time.Millisecond * 500)
 		return "a", nil
 	})
@@ -86,7 +86,7 @@ func Test_SerialWorkerpoolFetching_WorkerCap(t *testing.T) {
 func Test_WorkerpoolFetching_NoCapThroughput(t *testing.T) {
 	start := time.Now()
 	workerPool := NewDefaultWorkerPool[string](context.Background())
-	simpleGet := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+	simpleGet := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
 		return "a", nil
 	})
 	var toHold []async.Future[string]
@@ -107,7 +107,7 @@ func Test_WorkerpoolFetching_NoCap2ScaleUps(t *testing.T) {
 	workerPool := NewDefaultWorkerPool[string](context.Background())
 	workerPoolTyped := workerPool.(*defaultWorkerPool[string])
 	timeToSleep := int64(1500)
-	simpleGet := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+	simpleGet := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
 		time.Sleep(time.Millisecond * time.Duration(timeToSleep))
 		return "a", nil
 	})
@@ -154,7 +154,7 @@ func Test_WorkerpoolFetching_LargeScaleUp(t *testing.T) {
 	workerPool := NewDefaultWorkerPool[string](context.Background())
 	workerPoolTyped := workerPool.(*defaultWorkerPool[string])
 	timeToSleep := int64(1500)
-	simpleGet := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+	simpleGet := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
 		time.Sleep(time.Millisecond * time.Duration(timeToSleep))
 		return "a", nil
 	})
@@ -183,7 +183,7 @@ func Test_SerialWorkerpoolFetching_WithPanics(t *testing.T) {
 	workerPool := NewDefaultWorkerPool[string](context.Background(), WithMaxNumberOfThreads(1))
 	workerPoolTyped := workerPool.(*defaultWorkerPool[string])
 	noPanicYet := true
-	simpleGet := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+	simpleGet := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
 		if noPanicYet {
 			noPanicYet = false
 			panic("p")
@@ -214,7 +214,7 @@ func Test_CanSubmitWithMetrics(t *testing.T) {
 	ctxWithRegistry, registry := getContextWithRegistry()
 
 	workerPool := NewDefaultWorkerPool[string](ctxWithRegistry, WithMetricTags(metrics.Tags{metrics.MustNewTag("k", "v")}))
-	simpleGet := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+	simpleGet := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
 		return "a", nil
 	})
 	// Single submit
@@ -247,7 +247,7 @@ func Test_CanSubmitWithMetrics(t *testing.T) {
 func Test_WorkerPoolDedupesParentContextCancelation(t *testing.T) {
 	// We submit no cancel first
 	workerPool := NewDefaultWorkerPool[string](context.Background())
-	getThatRespectsDoneContext := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+	getThatRespectsDoneContext := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
@@ -286,7 +286,7 @@ func Test_WorkerPoolStopsProcessingIfParentContextStopped(t *testing.T) {
 	ctx, cancel := context.WithCancel(ctx)
 	workerPool := NewDefaultWorkerPool[string](ctx)
 	workerPoolTyped := workerPool.(*defaultWorkerPool[string])
-	getFunc := functional.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+	getFunc := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
 		return "a", nil
 	})
 	// Single submit

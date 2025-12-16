@@ -3,8 +3,8 @@ package workerpool
 import (
 	"context"
 
-	"github.palantir.build/deployability/generics-pkg/util/async"
-	"github.palantir.build/deployability/generics-pkg/util/functional"
+	"github.com/palantir/witchcraft-go-tasks/function"
+	"github.com/palantir/witchcraft-go-tasks/util/async"
 )
 
 type defaultVoidWorkerPool struct {
@@ -19,16 +19,16 @@ func NewDefaultVoidWorkerPool(ctx context.Context, options ...Option) VoidWorker
 	}
 }
 
-func (d *defaultVoidWorkerPool) Submit(ctx context.Context, runnable functional.Runnable) async.VoidFuture {
-	supplier := functional.NewSupplierFromFunc(func(ctx context.Context) (struct{}, error) {
+func (d *defaultVoidWorkerPool) Submit(ctx context.Context, runnable function.Runnable) async.VoidFuture {
+	supplier := function.NewSupplierFromFunc(func(ctx context.Context) (struct{}, error) {
 		err := runnable.Run(ctx)
 		return struct{}{}, err
 	})
 	return d.workerPool.Submit(ctx, supplier)
 }
 
-func (d *defaultVoidWorkerPool) SubmitWithCallback(ctx context.Context, runnable functional.Runnable, onComplete func(error)) {
-	d.workerPool.SubmitWithCallback(ctx, functional.NewSupplierFromFunc(func(ctx context.Context) (struct{}, error) {
+func (d *defaultVoidWorkerPool) SubmitWithCallback(ctx context.Context, runnable function.Runnable, onComplete func(error)) {
+	d.workerPool.SubmitWithCallback(ctx, function.NewSupplierFromFunc(func(ctx context.Context) (struct{}, error) {
 		err := runnable.Run(ctx)
 		return struct{}{}, err
 	}), func(_ struct{}, err error) {

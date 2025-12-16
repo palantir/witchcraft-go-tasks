@@ -101,11 +101,21 @@ func (q *collapsingQueue[T]) Len() int {
 	return q.queue.Len()
 }
 
+func (q *collapsingQueue[T]) Get() (item T, shutdown bool) {
+	return q.GetWithCallback(nil)
+}
+
 // Get blocks until it can return an item to be processed. If shutdown = true,
 // the caller should end their goroutine. You must call Done with item when you
 // have finished processing it.
-func (q *collapsingQueue[T]) Get() (item T, shutdown bool) {
+func (q *collapsingQueue[T]) GetWithCallback(callback func()) (item T, shutdown bool) {
 	q.cond.L.Lock()
+	defer func() {
+		if callback != nil {
+			callback()
+		}
+		q.cond.L.Unlock()
+	}()
 	defer q.cond.L.Unlock()
 	for q.queue.Len() == 0 && !q.shuttingDown {
 		q.cond.Wait()
