@@ -17,8 +17,6 @@ package queue
 // queue is a slice which implements Queue.
 type queueWrapper[T comparable] []T
 
-func (q *queueWrapper[T]) Touch(item T) {}
-
 func (q *queueWrapper[T]) Push(item T) {
 	*q = append(*q, item)
 }

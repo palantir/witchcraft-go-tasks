@@ -75,11 +75,6 @@ func (q *collapsingQueue[T]) Add(item T) {
 		return
 	}
 	if q.dirty.Has(item) {
-		// the same item is added again before it is processed, call the Touch
-		// function if the queue cares about it (for e.g, reset its priority)
-		if !q.processing.Has(item) {
-			q.queue.Touch(item)
-		}
 		return
 	}
 
