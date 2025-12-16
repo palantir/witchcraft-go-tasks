@@ -2,7 +2,6 @@ package workerpool
 
 import (
 	"context"
-	"time"
 
 	"github.com/palantir/witchcraft-go-logging/wlog/svclog/svc1log"
 	"github.com/palantir/witchcraft-go-logging/wlog/wapp"
@@ -13,18 +12,19 @@ import (
 const maxNumRequeues = 5
 
 type defaultWorkerPool[T ElementIdentifier] struct {
-	elementProcessor ElementProcessor[T]
+	// elementProcessor ElementProcessor[T]
 	// k8sKeyedErrorHealthCheckSource observability.K8sKeyedErrorHealthCheckSource
-	numWorkers     int
-	queue          workqueue.Queue
-	workerPoolName string
+	// numWorkers     int
+	queue              workqueue.CollapsingQueue[T]
+	workerPoolName     string
+	consumerWorkerPool ConsumerWorkerPool[T]
 }
 
 // NewDefaultWorkerPool instantiates a worker pool
 func NewDefaultWorkerPool[T ElementIdentifier](
 	elementProcessor ElementProcessor[T],
 	numWorkers int,
-	queue workqueue.Queue,
+	queue workqueue.CollapsingQueue[T],
 // k8sKeyedErrorHealthCheckSource observability.K8sKeyedErrorHealthCheckSource,
 	workerPoolName string) K8sWorkerPool[T] {
 	return &defaultWorkerPool[T]{
@@ -38,9 +38,9 @@ func NewDefaultWorkerPool[T ElementIdentifier](
 
 func (d defaultWorkerPool[T]) Start(ctx context.Context) {
 	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("workerPoolName", d.workerPoolName))
-	for i := 0; i < d.numWorkers; i++ {
-		d.startWorkerAsync(ctx, i)
-	}
+	//for i := 0; i < d.numWorkers; i++ {
+	//	d.startWorkerAsync(ctx, i)
+	// }
 }
 
 func (d defaultWorkerPool[T]) Submit(ctx context.Context, element T) {
@@ -68,15 +68,8 @@ func (d defaultWorkerPool[T]) runWorkerLoop(ctx context.Context) {
 			svc1log.FromContext(ctx).Warn("Queue shutting down; workers stopping.")
 			return
 		}
-		typedElement, ok := element.(T)
-		if !ok {
-			svc1log.FromContext(ctx).Error("Unexpected queue element type; this should never happen!")
-			d.queue.Done(element)
-			d.queue.Forget(element)
-			continue
-		}
-		d.singleProcessAttempt(ctx, typedElement)
-		wccmetrics.WccMetrics(ctx).QueueLength().WorkerPoolName(d.workerPoolName).Gauge().Update(int64(d.queue.Len()))
+		d.singleProcessAttempt(ctx, element)
+		// wccmetrics.WccMetrics(ctx).QueueLength().WorkerPoolName(d.workerPoolName).Gauge().Update(int64(d.queue.Len()))
 	}
 }
 
@@ -89,31 +82,66 @@ func (d defaultWorkerPool[T]) singleProcessAttempt(ctx context.Context, typedEle
 		return
 	}
 	d.queue.Done(typedElement)
-	d.queue.Forget(typedElement)
-	d.k8sKeyedErrorHealthCheckSource.Submit(ctx, typedElement.GetIdentifier(), nil)
+	// d.queue.Forget(typedElement)
+	// d.k8sKeyedErrorHealthCheckSource.Submit(ctx, typedElement.GetIdentifier(), nil)
 }
 
 func (d defaultWorkerPool[T]) runProcessorSingleTime(ctx context.Context, element T) error {
-	startTime := time.Now()
-	defer wccmetrics.WccMetrics(ctx).ProcessElementDuration().
-		WorkerPoolName(d.workerPoolName).
-		Timer().UpdateSince(startTime)
+	// startTime := time.Now()
+	//defer wccmetrics.WccMetrics(ctx).ProcessElementDuration().
+	//	WorkerPoolName(d.workerPoolName).
+	//	Timer().UpdateSince(startTime)
 	closure := func(ctx context.Context) error {
+		d.consumerWorkerPool.Submit(ctx, element)
 		return d.elementProcessor.ProcessElement(ctx, element)
 	}
 	return wapp.RunWithRecoveryLoggingWithError(ctx, closure)
 }
 
 func (d defaultWorkerPool[T]) handleProcessError(ctx context.Context, element T, err error) {
-	d.k8sKeyedErrorHealthCheckSource.Submit(ctx, element.GetIdentifier(), err)
-	numRequeues := d.queue.NumRequeues(element)
-	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("maxNumRequeues", maxNumRequeues), svc1log.SafeParam("numRequeues", numRequeues))
+	// d.k8sKeyedErrorHealthCheckSource.Submit(ctx, element.GetIdentifier(), err)
+	//numRequeues := d.queue.NumRequeues(element)
+	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("maxNumRequeues", maxNumRequeues)) //, svc1log.SafeParam("numRequeues", numRequeues))
 	d.queue.Done(element)
-	if numRequeues == maxNumRequeues {
-		observability.LogErrorTalkingToK8s(ctx, "Forgetting queue element after multiple failed process attempts.", err)
-		d.queue.Forget(element)
-	} else {
-		observability.LogErrorTalkingToK8s(ctx, "Failed to process queue element; requeuing.", err)
-		d.queue.AddRateLimited(element)
+	//if numRequeues == maxNumRequeues {
+	// observability.LogErrorTalkingToK8s(ctx, "Forgetting queue element after multiple failed process attempts.", err)
+	//	d.queue.Forget(element)
+	//} else {
+	// observability.LogErrorTalkingToK8s(ctx, "Failed to process queue element; requeuing.", err)
+	//	d.queue.AddRateLimited(element)
+	//}
+}
+
+type defaultWorkerPool2[T ElementIdentifier] struct {
+	// elementProcessor ElementProcessor[T]
+	// k8sKeyedErrorHealthCheckSource observability.K8sKeyedErrorHealthCheckSource
+	// numWorkers     int
+	queue              workqueue.CollapsingQueue[T]
+	consumerWorkerPool ConsumerWorkerPool[T]
+}
+
+func NNN[T ElementIdentifier](ctx context.Context, consumerWorkerPool ConsumerWorkerPool[T]) *defaultWorkerPool2[T] {
+	d := &defaultWorkerPool2[T]{
+		queue:              workqueue.NewCollapsingQueue[T](),
+		consumerWorkerPool: consumerWorkerPool,
+	}
+	go d.runWorkerLoop(ctx)
+	return d
+}
+
+func (d defaultWorkerPool2[T]) Submit(ctx context.Context, element T) {
+	d.queue.Add(element)
+}
+
+func (d defaultWorkerPool2[T]) runWorkerLoop(ctx context.Context) {
+	for {
+		element, shutdown := d.queue.Get()
+		if shutdown {
+			svc1log.FromContext(ctx).Warn("Queue shutting down; workers stopping.")
+			return
+		}
+		// have the single de-duped element
+		nowWeHaveAFuture := d.consumerWorkerPool.Submit(ctx, element)
+		// wccmetrics.WccMetrics(ctx).QueueLength().WorkerPoolName(d.workerPoolName).Gauge().Update(int64(d.queue.Len()))
 	}
 }

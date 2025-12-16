@@ -21,4 +21,23 @@ type K8sWorkerPool[T ElementIdentifier] interface {
 type ElementIdentifier interface {
 	// GetIdentifier should return a unique identifier that is used for logs and health
 	GetIdentifier() string
+	comparable
 }
+
+type Function[T any, R any] interface {
+	Apply(ctx context.Context, arg T) (R, error)
+}
+
+type ConsumerWorkerPool[T any] interface {
+	Submit(ctx context.Context, arg T) VoidFuture
+}
+
+type Future[T any] interface {
+	Get(ctx context.Context) (T, error)
+}
+
+// VoidFuture is short hand for a Future in which we don't care about the return type
+// Instead of defining a new Future with a signature, Get(ctx context.Context) (error)
+// we just used the struct{} instead. The avoids all interfaces that deal with Futures having to be defined multiple times
+// It is inspired by Java's Future<Void>
+type VoidFuture = Future[struct{}]
