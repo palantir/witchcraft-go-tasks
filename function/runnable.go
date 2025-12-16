@@ -49,7 +49,7 @@ func NewRunnableFromFunction[T, R any](arg T, function Function[T, R]) Runnable 
 	return NewRunnableFromConsumer(arg, NewConsumerFromFunction(function))
 }
 
-// NewRunnableFromConsumer is a utility function that will create a Runnable given an arg and a Consumer[T]
+// NewRunnableFromConsumer returns a Runnable based on the provided Consumer[T] and argument. The returned Runnable's Run function calls the Accept function of the provided consumer with the provided argument and returns the error returned by the function.
 func NewRunnableFromConsumer[T any](arg T, consumer Consumer[T]) Runnable {
 	return NewRunnableFromFunc(func(ctx context.Context) error {
 		return consumer.Accept(ctx, arg)
