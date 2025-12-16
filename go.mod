@@ -6,7 +6,7 @@ require (
 	github.com/palantir/pkg/metrics v1.9.0
 	github.com/palantir/witchcraft-go-error v1.42.0
 	github.com/palantir/witchcraft-go-health v1.17.0
-	github.com/palantir/witchcraft-go-logging v1.63.0
+	github.com/palantir/witchcraft-go-logging v1.64.0
 	github.com/palantir/witchcraft-go-tracing v1.41.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sync v0.19.0
