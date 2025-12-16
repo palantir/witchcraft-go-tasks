@@ -31,7 +31,7 @@ func (f ConsumerFunc[T]) Accept(ctx context.Context, arg T) error {
 	return f(ctx, arg)
 }
 
-// NewConsumerFromFunc creates an interface of Consumer[T] by casing this given function to a ConsumerFunc
+// NewConsumerFromFunc returns a Consumer[T] by using type conversion to convert the provided function to a ConsumerFunc.
 func NewConsumerFromFunc[T any](funcToCall func(ctx context.Context, arg T) error) Consumer[T] {
 	return ConsumerFunc[T](funcToCall)
 }
