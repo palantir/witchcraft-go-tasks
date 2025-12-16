@@ -36,7 +36,7 @@ func NewConsumerFromFunc[T any](funcToCall func(ctx context.Context, arg T) erro
 	return ConsumerFunc[T](funcToCall)
 }
 
-// NewConsumerFromFunction is a utility function that will create a Consumer[R] given an arg and a Function[T,any]
+// NewConsumerFromFunction returns a Consumer[T] created from the provided Function[T, R]. The returned Consumer calls the Apply function of the provided Function with the T argument, ignores the R value returned by the function, and returns the error returned by the function.
 func NewConsumerFromFunction[T, R any](function Function[T, R]) Consumer[T] {
 	return NewConsumerFromFunc(func(ctx context.Context, arg T) error {
 		_, err := function.Apply(ctx, arg)
