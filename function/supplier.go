@@ -24,7 +24,7 @@ type Supplier[T any] interface {
 	Get(ctx context.Context) (T, error)
 }
 
-// SupplierFunc is a type alias for a function that satisfies the Supplier interface
+// SupplierFunc is a named type for a function that implements the Supplier interface.
 type SupplierFunc[T any] func(ctx context.Context) (T, error)
 
 func (f SupplierFunc[T]) Get(ctx context.Context) (T, error) {
