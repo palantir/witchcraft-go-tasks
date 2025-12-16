@@ -24,7 +24,7 @@ type Function[T any, R any] interface {
 	Apply(ctx context.Context, arg T) (R, error)
 }
 
-// FunctionFunc is a type alias for a function that satisfies the Function interface
+// FunctionFunc is a named type for a function that satisfies the Function interface
 type FunctionFunc[T any, R any] func(ctx context.Context, arg T) (R, error)
 
 func (f FunctionFunc[T, R]) Apply(ctx context.Context, arg T) (R, error) {
