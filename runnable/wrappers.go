@@ -21,17 +21,18 @@ import (
 	"github.com/palantir/witchcraft-go-health/sources/window"
 	"github.com/palantir/witchcraft-go-logging/wlog/svclog/svc1log"
 	"github.com/palantir/witchcraft-go-logging/wlog/wapp"
+	"github.com/palantir/witchcraft-go-tasks/function"
 )
 
 // ErrorFn is an error handler.
 type ErrorFn func(ctx context.Context, err error)
 
 // Wrapper is a method that wraps a runnable with some logic generating another runnable.
-type Wrapper func(runnable Runnable) Runnable
+type Wrapper func(runnable function.NamedRunnable) function.NamedRunnable
 
 // WithWrappers stacks an array of wrappers in order.
 func WithWrappers(wrappers ...Wrapper) Wrapper {
-	return func(runnable Runnable) Runnable {
+	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		for _, wrapper := range wrappers {
 			runnable = wrapper(runnable)
 		}
@@ -41,7 +42,7 @@ func WithWrappers(wrappers ...Wrapper) Wrapper {
 
 // WithFatalLogging wraps a runnable with fatal logging.
 func WithFatalLogging() Wrapper {
-	return func(runnable Runnable) Runnable {
+	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New(runnable.Name(), func(ctx context.Context) error {
 			return wapp.RunWithFatalLogging(ctx, runnable.Run)
 		})
@@ -51,7 +52,7 @@ func WithFatalLogging() Wrapper {
 // WithServiceLogging adds the runnable name to the context and
 // adds log lines at the start and at the end of the execution.
 func WithServiceLogging() Wrapper {
-	return func(runnable Runnable) Runnable {
+	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New(runnable.Name(), func(ctx context.Context) error {
 			ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("runnableName", runnable.Name()))
 			svc1log.FromContext(ctx).Info("Starting runnable")
@@ -68,7 +69,7 @@ func WithServiceLogging() Wrapper {
 // WithErrorHandler adds an error handler that is invoked when the runnable returns a non nil error.
 // Does nothing if the error handler is nil.
 func WithErrorHandler(errorFn ErrorFn) Wrapper {
-	return func(runnable Runnable) Runnable {
+	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New(runnable.Name(), func(ctx context.Context) error {
 			if err := runnable.Run(ctx); err != nil {
 				if errorFn != nil {
@@ -83,7 +84,7 @@ func WithErrorHandler(errorFn ErrorFn) Wrapper {
 
 // DisableErrorPropagation returns a runnable wrapper that logs the error returned by the runnable instead of returning it.
 func DisableErrorPropagation() Wrapper {
-	return func(runnable Runnable) Runnable {
+	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New(runnable.Name(), func(ctx context.Context) error {
 			if err := runnable.Run(ctx); err != nil {
 				svc1log.FromContext(ctx).Error("Error while running runnable", svc1log.Stacktrace(err))
@@ -95,7 +96,7 @@ func DisableErrorPropagation() Wrapper {
 
 // WithTelemetry returns a runnable wrapper that submits the error returned by the runnable to the given KeyedErrorHealthCheckSource.
 func WithTelemetry(telemetry window.KeyedErrorHealthCheckSource) Wrapper {
-	return func(runnable Runnable) Runnable {
+	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New(runnable.Name(), func(ctx context.Context) error {
 			err := runnable.Run(ctx)
 			telemetry.Submit(runnable.Name(), err)
@@ -107,7 +108,7 @@ func WithTelemetry(telemetry window.KeyedErrorHealthCheckSource) Wrapper {
 // WithTimeout returns a runnable wrapper that runs the runnable with the given timeout.
 // If the runnable exceeds the timeout Context.DeadlineExceeded error will be returned.
 func WithTimeout(timeout time.Duration) Wrapper {
-	return func(runnable Runnable) Runnable {
+	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New(runnable.Name(), func(ctx context.Context) error {
 			ctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
@@ -129,7 +130,7 @@ func WithTimeout(timeout time.Duration) Wrapper {
 
 // WhileChanNotClosed restarts the runnable when it finishes until it returns an error or until the channel is closed.
 func WhileChanNotClosed(stopChan <-chan struct{}) Wrapper {
-	return func(runnable Runnable) Runnable {
+	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New(runnable.Name(), func(ctx context.Context) error {
 			for {
 				select {
@@ -148,7 +149,7 @@ func WhileChanNotClosed(stopChan <-chan struct{}) Wrapper {
 // Periodically returns a runnable wrapper that runs the runnable periodically with the given interval
 // until it returns an error or until the channel is closed.
 func Periodically(interval time.Duration, stopChan <-chan struct{}) Wrapper {
-	return func(runnable Runnable) Runnable {
+	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New(runnable.Name(), func(ctx context.Context) error {
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()

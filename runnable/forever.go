@@ -17,19 +17,20 @@ package runnable
 import (
 	"context"
 
+	"github.com/palantir/witchcraft-go-tasks/function"
 	"github.com/palantir/witchcraft-go-tasks/parallel"
 )
 
 type foreverRunnable struct {
 	name      string
-	runnables []Runnable
+	runnables []function.Runnable
 	wrappers  []Wrapper
 }
 
 // NewForever combines multiple runnables intended to run indefinitely, such as controllers, to run as a single runnable in parallel.
 // The optional wrappers are stacked on top of each underneath runnable in order.
 // On panic or return of a runnable, the context is cancelled and NewForever returns.
-func NewForever(name string, runnables []Runnable, wrappers ...Wrapper) Runnable {
+func NewForever(name string, runnables []function.Runnable, wrappers ...Wrapper) function.Runnable {
 	return &foreverRunnable{
 		name:      name,
 		runnables: runnables,

@@ -17,13 +17,14 @@ package runnable
 import (
 	"context"
 
+	"github.com/palantir/witchcraft-go-tasks/function"
 	"github.com/palantir/witchcraft-go-tasks/parallel"
 )
 
 type parallelRunnable struct {
 	name               string
 	maxParallelWorkers uint
-	runnables          []Runnable
+	runnables          []function.Runnable
 	wrappers           []Wrapper
 }
 
@@ -32,7 +33,7 @@ type parallelRunnable struct {
 // Waits for all runnables to finish and returns the first error.
 // Returns nil at the end if all runnables succeed.
 // A value of zero maxParallelWorkers means unbounded parallel workers.
-func NewParallel(name string, maxParallelWorkers uint, runnables []Runnable, wrappers ...Wrapper) Runnable {
+func NewParallel(name string, maxParallelWorkers uint, runnables []function.Runnable, wrappers ...Wrapper) function.Runnable {
 	return &parallelRunnable{
 		name:               name,
 		maxParallelWorkers: maxParallelWorkers,
