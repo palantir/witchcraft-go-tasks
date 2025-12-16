@@ -31,7 +31,7 @@ func (f SupplierFunc[T]) Get(ctx context.Context) (T, error) {
 	return f(ctx)
 }
 
-// NewSupplierFromFunc creates an interface of Supplier[T] by casing this given function to a SupplierFunc
+// NewSupplierFromFunc returns a Supplier[T] by by using type conversion to convert the provided function to a  SupplierFunc.
 func NewSupplierFromFunc[T any](funcToCall func(ctx context.Context) (T, error)) Supplier[T] {
 	return SupplierFunc[T](funcToCall)
 }
