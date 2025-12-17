@@ -37,7 +37,11 @@ type computationResult[T any] struct {
 	err    error
 }
 
-// NewDefaultComputingFuture returns the default implementation of ComputingFuture[T]
+// NewDefaultComputingFuture returns the default implementation of ComputingFuture[T].
+// The Compute function of this implementation runs the provided supplier exactly once and stores the
+// result. Any panics that occur in the supplier are caught and treated as an error of the supplier.
+// The Get function of this implementation returns the result computed by Compute (and blocks until Compute has been called and completes if it has not yet been called).
+// Neither the Compute nor the Get implementations check for context cancellation: if cancellation support is needed, it should be handled by the provided supplier.
 func NewDefaultComputingFuture[T any](supplier function.Supplier[T]) ComputingFuture[T] {
 	return &defaultComputingFuture[T]{
 		cond:     sync.NewCond(&sync.Mutex{}),
