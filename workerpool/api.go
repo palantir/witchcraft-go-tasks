@@ -26,6 +26,7 @@ import (
 // In general worker pools should not be used in a standalone manner, however they are exposed in a public package to provider underlying configuration options
 type SupplierWorkerPool[R any] interface {
 	Submit(ctx context.Context, supplier function.Supplier[R]) async.Future[R]
+	SubmitWithCallback(ctx context.Context, supplier function.Supplier[R], onComplete func(context.Context, R, error))
 }
 
 // FunctionWorkerPool is a generic interface that allows users to submit an argument value and get back a future in return.
@@ -39,10 +40,12 @@ type FunctionWorkerPool[T, R any] interface {
 // It accepts the same configuration options that are passed to the underlying WorkerPool
 type RunnableWorkerPool interface {
 	Submit(ctx context.Context, runnable function.Runnable) async.VoidFuture
+	SubmitWithCallback(ctx context.Context, runnable function.Runnable, onComplete func(context.Context, error))
 }
 
 type ConsumerWorkerPool[T any] interface {
 	Submit(ctx context.Context, arg T) async.VoidFuture
+	SubmitWithCallback(ctx context.Context, arg T, onComplete func(context.Context, T, error))
 }
 
 // Config that is used to configure both the WorkerPool and VoidWorkerPool. Configured with given options

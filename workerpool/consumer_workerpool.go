@@ -23,17 +23,25 @@ import (
 
 type defaultConsumerWorkerPool[T any] struct {
 	workerPool RunnableWorkerPool
-	processor  function.Consumer[T]
+	consumer   function.Consumer[T]
 }
 
 // NewDefaultConsumerWorkerPool returns a default ConsumerWorkerPool[T]
-func NewDefaultConsumerWorkerPool[T any](ctx context.Context, processor function.Consumer[T], options ...Option) ConsumerWorkerPool[T] {
+func NewDefaultConsumerWorkerPool[T any](ctx context.Context, consumer function.Consumer[T], options ...Option) ConsumerWorkerPool[T] {
 	return &defaultConsumerWorkerPool[T]{
 		workerPool: NewDefaultRunnableWorkerPool(ctx, options...),
-		processor:  processor,
+		consumer:   consumer,
 	}
 }
 
 func (d defaultConsumerWorkerPool[T]) Submit(ctx context.Context, arg T) async.VoidFuture {
-	return d.workerPool.Submit(ctx, function.NewRunnableFromConsumer(arg, d.processor))
+	return d.workerPool.Submit(ctx, function.NewRunnableFromConsumer(arg, d.consumer))
+}
+
+func (d *defaultConsumerWorkerPool[T]) SubmitWithCallback(ctx context.Context, arg T, onComplete func(context.Context, T, error)) {
+	d.workerPool.Submit(ctx, function.NewRunnableFromFunc(func(ctx context.Context) error {
+		err := d.consumer.Accept(ctx, arg)
+		onComplete(ctx, arg, err)
+		return err
+	}))
 }

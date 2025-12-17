@@ -39,3 +39,12 @@ func (d *defaultRunnableWorkerPool) Submit(ctx context.Context, runnable functio
 	})
 	return d.workerPool.Submit(ctx, supplier)
 }
+
+func (d *defaultRunnableWorkerPool) SubmitWithCallback(ctx context.Context, runnable function.Runnable, onComplete func(context.Context, error)) {
+	d.workerPool.SubmitWithCallback(ctx, function.NewSupplierFromFunc(func(ctx context.Context) (struct{}, error) {
+		err := runnable.Run(ctx)
+		return struct{}{}, err
+	}), func(ctx context.Context, _ struct{}, err error) {
+		onComplete(ctx, err)
+	})
+}

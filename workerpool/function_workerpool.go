@@ -37,3 +37,9 @@ func NewDefaultFunctionWorkerPool[T, R any](ctx context.Context, function functi
 func (d *defaultFunctionWorkerPool[T, R]) Submit(ctx context.Context, arg T) async.Future[R] {
 	return d.workerPool.Submit(ctx, function.NewSupplierFromFunction[T, R](arg, d.function))
 }
+
+func (d *defaultFunctionWorkerPool[T, R]) SubmitWithCallback(ctx context.Context, arg T, onComplete func(context.Context, T, R, error)) {
+	d.workerPool.SubmitWithCallback(ctx, function.NewSupplierFromFunction[T, R](arg, d.function), func(ctx context.Context, r R, err error) {
+		onComplete(ctx, arg, r, err)
+	})
+}

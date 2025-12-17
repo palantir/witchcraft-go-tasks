@@ -75,6 +75,14 @@ func (d *defaultSupplierWorkerPool[R]) Submit(ctxFromClient context.Context, sup
 	return computingFuture
 }
 
+func (d *defaultSupplierWorkerPool[R]) SubmitWithCallback(ctxFromClient context.Context, supplier function.Supplier[R], onComplete func(context.Context, R, error)) {
+	d.Submit(ctxFromClient, function.NewSupplierFromFunc(func(ctx context.Context) (R, error) {
+		result, err := supplier.Get(ctx)
+		onComplete(ctx, result, err)
+		return result, err
+	}))
+}
+
 func (d *defaultSupplierWorkerPool[R]) startWorker(ctx context.Context) {
 	runFn := func(ctx context.Context) {
 		d.runWorkerLoop(ctx)
