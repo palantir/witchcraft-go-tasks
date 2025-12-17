@@ -41,6 +41,12 @@ func TestQueue_AddAndGetNonComparable(t *testing.T) {
 	q2 := NewQueue[MyFunc]()
 	q2.Add(func() string { return "hello, world" })
 	q2.Add(func() string { return "goodbye, world" })
+	got, shutdown := q2.Get()
+	assert.Equal(t, got(), "hello, world")
+	assert.False(t, shutdown)
+	got, shutdown = q2.Get()
+	assert.Equal(t, got(), "goodbye, world")
+	assert.False(t, shutdown)
 }
 
 func TestQueue_GetWithCallback(t *testing.T) {
