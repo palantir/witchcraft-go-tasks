@@ -18,7 +18,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/palantir/witchcraft-go-health/sources/window"
+	"github.com/palantir/witchcraft-go-health/v2/sources/window"
 	"github.com/palantir/witchcraft-go-logging/wlog/svclog/svc1log"
 	"github.com/palantir/witchcraft-go-logging/wlog/wapp"
 	"github.com/palantir/witchcraft-go-tasks/function"
@@ -105,7 +105,7 @@ func WithTelemetry(telemetry window.KeyedErrorHealthCheckSource) Wrapper {
 	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New(runnable.Name(), func(ctx context.Context) error {
 			err := runnable.Run(ctx)
-			telemetry.Submit(runnable.Name(), err)
+			telemetry.Submit(ctx, runnable.Name(), err)
 			return err
 		})
 	}
