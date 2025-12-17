@@ -22,6 +22,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestQueue_AddAndGetNonComparable(t *testing.T) {
+	type MyFunc func() string
+	q2 := NewQueue[MyFunc]()
+	q2.Add(func() string { return "hello, world" })
+	q2.Add(func() string { return "goodbye, world" })
+}
+
 func TestQueue_AddAndGet(t *testing.T) {
 	q := NewQueue[string]()
 	q.Add("item1")
