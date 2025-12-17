@@ -37,8 +37,12 @@ type Queue[T any] interface {
 	// lock, before returning. This can be used to perform atomic operations when
 	// an item is dequeued.
 	GetWithCallback(callback func()) (item T, shutdown bool)
-	// ShutDown initiates shutdown. New Add() calls are ignored. Blocked Get() calls
-	// will return with shutdown=true once the queue is empty.
+	// ShutDown initiates shutdown and returns (does not block).
+	// Once this function is called, new items cannot be added
+	// (Add() becomes a noop). Any elements in the queue that
+	// were present before it started shutting down will still be returned
+	// by Get() calls with shutdown=false. Once the queue is empty,
+	// Get() calls will return with shutdown=true.
 	ShutDown()
 	// ShutDownWithDrain initiates shutdown and blocks until all queued items have
 	// been retrieved via Get(). Can be interrupted by calling ShutDown().
