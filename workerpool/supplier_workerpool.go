@@ -22,9 +22,9 @@ import (
 	"github.com/palantir/witchcraft-go-logging/wlog/svclog/svc1log"
 	"github.com/palantir/witchcraft-go-logging/wlog/wapp"
 	"github.com/palantir/witchcraft-go-tasks/function"
+	"github.com/palantir/witchcraft-go-tasks/internal/futures"
 	"github.com/palantir/witchcraft-go-tasks/internal/queue"
 	"github.com/palantir/witchcraft-go-tasks/util/async"
-	"github.com/palantir/witchcraft-go-tasks/workerpool/internal"
 )
 
 const (
@@ -42,7 +42,7 @@ type defaultSupplierWorkerPool[R any] struct {
 
 type workerPoolWrapperObject[R any] struct {
 	contextToRunFutureWith context.Context
-	underlyingFuture       internal.ComputingFuture[R]
+	underlyingFuture       futures.ComputingFuture[R]
 }
 
 // NewDefaultSupplierWorkerPool creates a default SupplierWorkerPool
@@ -65,7 +65,7 @@ func (d *defaultSupplierWorkerPool[R]) Submit(ctxFromClient context.Context, sup
 		d.startWorkerAsync()
 		d.markWorkerCount()
 	}
-	computingFuture := internal.NewDefaultComputingFuture(supplier)
+	computingFuture := futures.NewDefaultComputingFuture(supplier)
 	workerPoolWrapperObject := workerPoolWrapperObject[R]{
 		contextToRunFutureWith: ctxFromClient,
 		underlyingFuture:       computingFuture,
