@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/palantir/pkg/metrics"
+	werror "github.com/palantir/witchcraft-go-error"
 	"github.com/palantir/witchcraft-go-tasks/function"
 	"github.com/palantir/witchcraft-go-tasks/util/async"
 	"github.com/stretchr/testify/assert"
@@ -32,6 +33,9 @@ func Test_SerialWorkerpoolFetching(t *testing.T) {
 	workerPoolTyped := workerPool.(*defaultSupplierWorkerPool[string])
 	simpleGet := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
 		return "a", nil
+	})
+	simpleGetError := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
+		return "", werror.Error("ERR")
 	})
 	// Before doing anything
 	assert.Equal(t, 0, workerPoolTyped.queue.Len())
@@ -58,6 +62,16 @@ func Test_SerialWorkerpoolFetching(t *testing.T) {
 	workerPool.SubmitWithCallback(context.Background(), simpleGet, func(ctx context.Context, s string, err error) {
 		assert.NoError(t, err)
 		assert.Equal(t, "a", s)
+		seen = true
+	})
+	assert.Eventually(t, func() bool {
+		return seen
+	}, time.Millisecond*100, time.Millisecond*10)
+	// And error from callback
+	seen = false
+	workerPool.SubmitWithCallback(context.Background(), simpleGetError, func(ctx context.Context, s string, err error) {
+		assert.EqualError(t, err, "ERR")
+		assert.Equal(t, "", s)
 		seen = true
 	})
 	assert.Eventually(t, func() bool {
