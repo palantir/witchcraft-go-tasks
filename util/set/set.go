@@ -62,7 +62,17 @@ func (s Set[T]) Intersection(other Set[T]) Set[T] {
 	}
 	return result
 }
-
+// Iterator returns an iterator that returns the elements in the set.
+// The order of the returned elements is random.
+func (s Set[T]) Iterator() iter.Seq[T] {
+	return func(yield func(T) bool) {
+		for k := range s {
+			if !yield(k) {
+				return
+			}
+		}
+	}
+}
 // ToSlice returns a slice containing all elements of the set.
 func (s Set[T]) ToSlice() []T {
 	result := make([]T, len(s))
