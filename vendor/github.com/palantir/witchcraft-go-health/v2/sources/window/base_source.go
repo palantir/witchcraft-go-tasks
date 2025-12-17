@@ -19,13 +19,13 @@ import (
 	"time"
 
 	werror "github.com/palantir/witchcraft-go-error"
-	"github.com/palantir/witchcraft-go-health/conjure/witchcraft/api/health"
-	"github.com/palantir/witchcraft-go-health/status"
+	"github.com/palantir/witchcraft-go-health/v2/conjure/witchcraft/api/health"
+	"github.com/palantir/witchcraft-go-health/v2/status"
 )
 
 // ItemSubmitter allows components of code whose functionality dictates health status to just consume this single-method interface.
 type ItemSubmitter interface {
-	Submit(interface{})
+	Submit(ctx context.Context, item interface{})
 }
 
 // BaseHealthCheckSource determines health status based on user-submitted items.
@@ -72,7 +72,7 @@ func NewBaseHealthCheckSource(windowSize time.Duration, itemsToCheckFn ItemsToCh
 }
 
 // Submit submits an item.
-func (b *baseHealthCheckSource) Submit(item interface{}) {
+func (b *baseHealthCheckSource) Submit(ctx context.Context, item interface{}) {
 	b.timeWindowedStore.Submit(item)
 }
 
