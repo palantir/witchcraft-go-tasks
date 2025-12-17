@@ -1,3 +1,17 @@
+// Copyright (c) 2025 Palantir Technologies. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package workerpool
 
 import (
@@ -39,6 +53,16 @@ func Test_SerialWorkerpoolFetching(t *testing.T) {
 	assert.Equal(t, 0, workerPoolTyped.queue.Len())
 	assert.Equal(t, 1, int(workerPoolTyped.numberFree.Load()))
 	assert.Equal(t, 1, int(workerPoolTyped.totalCount.Load()))
+	// Ensure callback works as well
+	seen := false
+	workerPool.SubmitWithCallback(context.Background(), simpleGet, func(ctx context.Context, s string, err error) {
+		assert.NoError(t, err)
+		assert.Equal(t, "a", s)
+		seen = true
+	})
+	assert.Eventually(t, func() bool {
+		return seen
+	}, time.Millisecond*100, time.Millisecond*10)
 }
 
 func Test_SerialWorkerpoolFetching_WorkerCap(t *testing.T) {
