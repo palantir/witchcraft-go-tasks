@@ -36,6 +36,13 @@ func TestQueue_AddAndGet(t *testing.T) {
 	assert.Equal(t, 0, q.Len())
 }
 
+func TestQueue_AddAndGetNonComparable(t *testing.T) {
+	type MyFunc func() string
+	q2 := NewQueue[MyFunc]()
+	q2.Add(func() string { return "hello, world" })
+	q2.Add(func() string { return "goodbye, world" })
+}
+
 func TestQueue_GetWithCallback(t *testing.T) {
 	q := NewQueue[string]()
 	q.Add("item1")
