@@ -36,6 +36,7 @@ type Queue[T any] interface {
 	// GetWithCallback is like Get but invokes the callback while holding the queue
 	// lock, before returning. This can be used to perform atomic operations when
 	// an item is dequeued.
+	// The callback is not invoked if the queue is shutdown
 	GetWithCallback(callback func()) (item T, shutdown bool)
 	// ShutDown initiates shutdown and returns (does not block).
 	// Once this function is called, new items cannot be added
