@@ -45,7 +45,12 @@ type Queue[T any] interface {
 	// Get() calls will return with shutdown=true.
 	ShutDown()
 	// ShutDownWithDrain initiates shutdown and blocks until all queued items have
-	// been retrieved via Get(). Can be interrupted by calling ShutDown().
+	// been retrieved via Get(). Once this function is called, new items cannot be added
+	// (Add() becomes a noop). Any elements in the queue that
+	// were present before it started shutting down will still be returned
+	// by Get() calls with shutdown=false. Once the queue is empty,
+	// Get() calls will return with shutdown=true. If Shutdown() is called, it will interrupt
+	// any ShutDownWithDrain calls and cause them to return immediately.
 	ShutDownWithDrain()
 	// ShuttingDown returns true if ShutDown() or ShutDownWithDrain() has been called.
 	ShuttingDown() bool
