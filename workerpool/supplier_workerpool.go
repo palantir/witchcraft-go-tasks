@@ -32,32 +32,27 @@ const (
 	enqueuedMetricName = "com.palantir.workerpool.queued"
 )
 
-type defaultWorkerPool[T any] struct {
+type defaultSupplierWorkerPool[R any] struct {
 	config                        Config
-	queue                         queue.Queue[workerPoolWrapperObject[T]]
+	queue                         queue.Queue[workerPoolWrapperObject[R]]
 	numberFree                    atomic.Int64
 	totalCount                    atomic.Int64
 	parentContextForWorkerThreads context.Context
 }
 
-type workerPoolWrapperObject[T any] struct {
+type workerPoolWrapperObject[R any] struct {
 	contextToRunFutureWith context.Context
-	underlyingFuture       internal.ComputingFuture[T]
+	underlyingFuture       internal.ComputingFuture[R]
 }
 
-// NewDefaultWorkerPool instantiates a worker pool
-// This worker pool will start with 0 workers and go-routines running
-// It will increase the worker count during job submission iff all workers are working and we are below the maxNumberOfWorkers if set
-// It is the worker pool that is used by the defaultVoidWorkerPool
-// The context that is passed in should have all the given loggers needed
-// If this context ever returns under ctx.Done(), then the queue is shut down and all work is stopped
-func NewDefaultWorkerPool[T any](ctx context.Context, options ...Option) WorkerPool[T] {
+// NewDefaultSupplierWorkerPool creates a default SupplierWorkerPool
+func NewDefaultSupplierWorkerPool[R any](ctx context.Context, options ...Option) SupplierWorkerPool[R] {
 	config := &Config{}
 	for _, option := range options {
 		option(config)
 	}
-	d := &defaultWorkerPool[T]{
-		queue:                         queue.NewQueue[workerPoolWrapperObject[T]](),
+	d := &defaultSupplierWorkerPool[R]{
+		queue:                         queue.NewQueue[workerPoolWrapperObject[R]](),
 		config:                        *config,
 		parentContextForWorkerThreads: ctx,
 	}
@@ -65,13 +60,13 @@ func NewDefaultWorkerPool[T any](ctx context.Context, options ...Option) WorkerP
 	return d
 }
 
-func (d *defaultWorkerPool[T]) Submit(ctxFromClient context.Context, supplier function.Supplier[T]) async.Future[T] {
+func (d *defaultSupplierWorkerPool[R]) Submit(ctxFromClient context.Context, supplier function.Supplier[R]) async.Future[R] {
 	if d.needAdditionalWorker() {
 		d.startWorkerAsync()
 		d.markWorkerCount()
 	}
 	computingFuture := internal.NewDefaultComputingFuture(supplier)
-	workerPoolWrapperObject := workerPoolWrapperObject[T]{
+	workerPoolWrapperObject := workerPoolWrapperObject[R]{
 		contextToRunFutureWith: ctxFromClient,
 		underlyingFuture:       computingFuture,
 	}
@@ -80,7 +75,7 @@ func (d *defaultWorkerPool[T]) Submit(ctxFromClient context.Context, supplier fu
 	return computingFuture
 }
 
-func (d *defaultWorkerPool[T]) startWorker(ctx context.Context) {
+func (d *defaultSupplierWorkerPool[R]) startWorker(ctx context.Context) {
 	runFn := func(ctx context.Context) {
 		d.runWorkerLoop(ctx)
 	}
@@ -92,17 +87,17 @@ func (d *defaultWorkerPool[T]) startWorker(ctx context.Context) {
 	d.startWorker(ctx)
 }
 
-func (d *defaultWorkerPool[T]) getCurrentCount() int {
+func (d *defaultSupplierWorkerPool[R]) getCurrentCount() int {
 	return int(d.totalCount.Load())
 }
 
-func (d *defaultWorkerPool[T]) startWorkerAsync() {
+func (d *defaultSupplierWorkerPool[R]) startWorkerAsync() {
 	d.totalCount.Add(1)
 	workerID := d.getCurrentCount()
 	ctx := svc1log.WithLoggerParams(d.parentContextForWorkerThreads, svc1log.SafeParam("workerID", workerID))
 	go d.startWorker(ctx)
 }
-func (d *defaultWorkerPool[T]) runWorkerLoop(workerContext context.Context) {
+func (d *defaultSupplierWorkerPool[R]) runWorkerLoop(workerContext context.Context) {
 	// initialSubmitMade is needed so that we ensure that the first submission was tied to the submit that triggered it
 	initialSubmitMade := false
 	for {
@@ -123,7 +118,7 @@ func (d *defaultWorkerPool[T]) runWorkerLoop(workerContext context.Context) {
 	}
 }
 
-func (d *defaultWorkerPool[T]) needAdditionalWorker() bool {
+func (d *defaultSupplierWorkerPool[R]) needAdditionalWorker() bool {
 	notDoingWorkCount := int(d.numberFree.Load())
 	mapSize := d.getCurrentCount()
 	if d.config.maxNumberOfWorkers != nil && *d.config.maxNumberOfWorkers == mapSize {
@@ -141,19 +136,19 @@ func (d *defaultWorkerPool[T]) needAdditionalWorker() bool {
 	return false
 }
 
-func (d *defaultWorkerPool[T]) markWorkerCount() {
+func (d *defaultSupplierWorkerPool[R]) markWorkerCount() {
 	if len(d.config.tags) > 0 {
 		metrics.FromContext(d.parentContextForWorkerThreads).Gauge(cacheMetricName, d.config.tags...).Update(int64(d.getCurrentCount()))
 	}
 }
 
-func (d *defaultWorkerPool[T]) markQueueLength() {
+func (d *defaultSupplierWorkerPool[R]) markQueueLength() {
 	if len(d.config.tags) > 0 {
 		metrics.FromContext(d.parentContextForWorkerThreads).Gauge(enqueuedMetricName, d.config.tags...).Update(int64(d.queue.Len()))
 	}
 }
 
-func (d *defaultWorkerPool[T]) shutDownQueueIfNeeded() {
+func (d *defaultSupplierWorkerPool[R]) shutDownQueueIfNeeded() {
 	go func() {
 		for {
 			select {

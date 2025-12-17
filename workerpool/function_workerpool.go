@@ -21,20 +21,19 @@ import (
 	"github.com/palantir/witchcraft-go-tasks/util/async"
 )
 
-type defaultProcessorWorkerPool[A, T any] struct {
-	workerPool WorkerPool[T]
-	processor  function.Function[A, T]
+type defaultFunctionWorkerPool[T, R any] struct {
+	workerPool SupplierWorkerPool[R]
+	function   function.Function[T, R]
 }
 
-// NewDefaultProcessorWorkerPool creates a default ProcessorWorkerPool.
-// Arguments to Submit are passed to the processor function to populate result futures.
-func NewDefaultProcessorWorkerPool[A, T any](ctx context.Context, processor function.Function[A, T], options ...Option) ProcessorWorkerPool[A, T] {
-	return &defaultProcessorWorkerPool[A, T]{
-		workerPool: NewDefaultWorkerPool[T](ctx, options...),
-		processor:  processor,
+// NewDefaultFunctionWorkerPool creates a default FunctionWorkerPool.
+func NewDefaultFunctionWorkerPool[T, R any](ctx context.Context, function function.Function[T, R], options ...Option) FunctionWorkerPool[T, R] {
+	return &defaultFunctionWorkerPool[T, R]{
+		workerPool: NewDefaultSupplierWorkerPool[R](ctx, options...),
+		function:   function,
 	}
 }
 
-func (d *defaultProcessorWorkerPool[A, T]) Submit(ctx context.Context, arg A) async.Future[T] {
-	return d.workerPool.Submit(ctx, function.NewSupplierFromFunction[A, T](arg, d.processor))
+func (d *defaultFunctionWorkerPool[T, R]) Submit(ctx context.Context, arg T) async.Future[R] {
+	return d.workerPool.Submit(ctx, function.NewSupplierFromFunction[T, R](arg, d.function))
 }
