@@ -14,7 +14,7 @@
 
 package queue
 
-// queue is a slice which implements Queue.
+// queueWrapper is a named type for a slice that implements queue functions.
 type queueWrapper[T comparable] []T
 
 func (q *queueWrapper[T]) Push(item T) {
