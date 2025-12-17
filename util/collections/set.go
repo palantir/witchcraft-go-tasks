@@ -12,7 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package set
+package collections
+
+import (
+	"iter"
+)
 
 type empty struct{}
 
@@ -62,6 +66,7 @@ func (s Set[T]) Intersection(other Set[T]) Set[T] {
 	}
 	return result
 }
+
 // Iterator returns an iterator that returns the elements in the set.
 // The order of the returned elements is random.
 func (s Set[T]) Iterator() iter.Seq[T] {
@@ -72,16 +77,6 @@ func (s Set[T]) Iterator() iter.Seq[T] {
 			}
 		}
 	}
-}
-// ToSlice returns a slice containing all elements of the set.
-func (s Set[T]) ToSlice() []T {
-	result := make([]T, len(s))
-	idx := 0
-	for item := range s {
-		result[idx] = item
-		idx++
-	}
-	return result
 }
 
 // Equals checks if two sets are equal, i.e., they contain the same elements.

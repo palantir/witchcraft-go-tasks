@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package set
+package collections
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -172,19 +173,11 @@ func TestToSlice(t *testing.T) {
 	s.Insert(2)
 	s.Insert(3)
 
-	slice := s.ToSlice()
+	slice := slices.Collect(s.Iterator())
 
 	// ElementsMatch ignores the order of the elements.
 	expected := []int{1, 2, 3}
 	assert.ElementsMatch(t, expected, slice, "ToSlice should return a slice with all set elements")
-}
-
-func TestToSliceEmptySet(t *testing.T) {
-	s := New[string]()
-
-	slice := s.ToSlice()
-
-	assert.Empty(t, slice, "ToSlice on an empty set should return an empty slice")
 }
 
 func TestEquals(t *testing.T) {
