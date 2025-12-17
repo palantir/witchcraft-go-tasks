@@ -14,10 +14,6 @@
 
 package queue
 
-import (
-	"sync/atomic"
-)
-
 // Queue is a thread-safe generic work queue that provides blocking Get operations
 // and graceful shutdown capabilities. Items are processed in FIFO order.
 //
@@ -54,72 +50,60 @@ type Queue[T any] interface {
 // does not deduplicate items - each Add results in a corresponding Get.
 func NewQueue[T any]() Queue[T] {
 	return &queue[T]{
-		delegate: NewCollapsingQueue[queueItem](),
+		delegate: NewCollapsingQueue[*item[T]](),
 	}
 }
 
-// queueItem wraps an item with a unique ID to prevent collapsing behavior.
-// The item is stored as any since the user's T doesn't need to be comparable.
-type queueItem struct {
-	id   uint64
-	item any
+// item wraps a value with a pointer to prevent collapsing.
+// Pointers are always comparable (by address), so *item[T] satisfies comparable
+// even when T doesn't. Each Add creates a new pointer, ensuring uniqueness.
+type item[T any] struct {
+	value T
 }
 
-// queue wraps CollapsingQueue with unique item IDs to prevent deduplication.
+// queue delegates to CollapsingQueue using pointer-wrapped items to prevent deduplication.
 type queue[T any] struct {
-	delegate CollapsingQueue[queueItem]
-	nextID   atomic.Uint64
+	delegate CollapsingQueue[*item[T]]
 }
 
-// Add marks item as needing processing. When the queue is shutdown new
-// items will silently be ignored.
-func (q *queue[T]) Add(item T) {
-	wrapped := queueItem{
-		id:   q.nextID.Add(1),
-		item: item,
-	}
-	q.delegate.Add(wrapped)
+// Add enqueues an item for processing.
+func (q *queue[T]) Add(val T) {
+	// Each Add creates a new pointer - always unique, never collapses
+	q.delegate.Add(&item[T]{value: val})
 }
 
-// Len returns the current queue length, for informational purposes only. You
-// shouldn't e.g. gate a call to Add() or Get() on Len() being a particular
-// value, that can't be synchronized properly.
+// Len returns the current number of items waiting in the queue.
 func (q *queue[T]) Len() int {
 	return q.delegate.Len()
 }
 
-// Get blocks until it can return an item to be processed. If shutdown = true,
-// the caller should end their goroutine.
-func (q *queue[T]) Get() (item T, shutdown bool) {
+// Get blocks until an item is available and returns it.
+func (q *queue[T]) Get() (T, bool) {
 	return q.GetWithCallback(nil)
 }
 
-// GetWithCallback blocks until it can return an item to be processed. The callback
-// is invoked while holding the queue lock, before returning. If shutdown = true,
-// the caller should end their goroutine.
-func (q *queue[T]) GetWithCallback(callback func()) (item T, shutdown bool) {
+// GetWithCallback is like Get but invokes the callback while holding the queue lock.
+func (q *queue[T]) GetWithCallback(callback func()) (T, bool) {
 	wrapped, shutdown := q.delegate.GetWithCallback(callback)
 	if shutdown {
 		return *new(T), true
 	}
-	// Immediately mark as done since Queue doesn't track processing state
+	// Auto-mark done since Queue doesn't track processing state
 	q.delegate.Done(wrapped)
-	return wrapped.item.(T), false
+	return wrapped.value, false
 }
 
-// ShutDown will cause q to ignore all new items added to it. Worker
-// goroutines blocked on Get will be unblocked and receive shutdown = true.
+// ShutDown initiates shutdown.
 func (q *queue[T]) ShutDown() {
 	q.delegate.ShutDown()
 }
 
-// ShutDownWithDrain is equivalent to ShutDown but waits until all items
-// in the queue have been retrieved.
+// ShutDownWithDrain initiates shutdown and blocks until all queued items have been retrieved.
 func (q *queue[T]) ShutDownWithDrain() {
 	q.delegate.ShutDownWithDrain()
 }
 
-// ShuttingDown returns true if the queue is shutting down.
+// ShuttingDown returns true if shutdown has been initiated.
 func (q *queue[T]) ShuttingDown() bool {
 	return q.delegate.ShuttingDown()
 }
