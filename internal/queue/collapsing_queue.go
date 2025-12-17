@@ -32,9 +32,10 @@ import (
 // item was re-added while being processed, Done() will re-queue it for processing.
 type CollapsingQueue[T comparable] interface {
 	Queue[T]
-	// Done marks the item as finished processing. If the item was re-added to the
+	// Done marks the item as finished processing, and must be called once for each
+	// item returned by Get or GetWithCallback. If the item was re-added to the
 	// queue while it was being processed, it will be re-queued for another processing
-	// cycle. Must be called exactly once for each successful Get() call.
+	// cycle.
 	Done(item T)
 }
 
