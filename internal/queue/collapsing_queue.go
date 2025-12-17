@@ -17,7 +17,7 @@ package queue
 import (
 	"sync"
 
-	"github.com/palantir/witchcraft-go-tasks/util/set"
+	"github.com/palantir/witchcraft-go-tasks/util/collections"
 )
 
 // CollapsingQueue is a thread-safe work queue that deduplicates items. If an item
@@ -42,8 +42,8 @@ type CollapsingQueue[T comparable] interface {
 func NewCollapsingQueue[T comparable]() CollapsingQueue[T] {
 	return &collapsingQueue[T]{
 		queue:      new(queueWrapper[T]),
-		dirty:      set.Set[T]{},
-		processing: set.Set[T]{},
+		dirty:      collections.Set[T]{},
+		processing: collections.Set[T]{},
 		cond:       sync.NewCond(&sync.Mutex{}),
 		stopCh:     make(chan struct{}),
 	}
@@ -56,13 +56,13 @@ type collapsingQueue[t comparable] struct {
 	queue *queueWrapper[t]
 
 	// dirty defines all of the items that need to be processed.
-	dirty set.Set[t]
+	dirty collections.Set[t]
 
 	// Things that are currently being processed are in the processing set.
 	// These things may be simultaneously in the dirty set. When we finish
 	// processing something and remove it from this set, we'll check if
 	// it's in the dirty set, and if so, add it to the queue.
-	processing set.Set[t]
+	processing collections.Set[t]
 
 	cond *sync.Cond
 
