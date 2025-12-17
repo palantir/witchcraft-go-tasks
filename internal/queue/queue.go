@@ -66,23 +66,19 @@ type queue[T any] struct {
 	delegate CollapsingQueue[*item[T]]
 }
 
-// Add enqueues an item for processing.
 func (q *queue[T]) Add(val T) {
 	// Each Add creates a new pointer - always unique, never collapses
 	q.delegate.Add(&item[T]{value: val})
 }
 
-// Len returns the current number of items waiting in the queue.
 func (q *queue[T]) Len() int {
 	return q.delegate.Len()
 }
 
-// Get blocks until an item is available and returns it.
 func (q *queue[T]) Get() (T, bool) {
 	return q.GetWithCallback(nil)
 }
 
-// GetWithCallback is like Get but invokes the callback while holding the queue lock.
 func (q *queue[T]) GetWithCallback(callback func()) (T, bool) {
 	wrapped, shutdown := q.delegate.GetWithCallback(callback)
 	if shutdown {
@@ -93,17 +89,14 @@ func (q *queue[T]) GetWithCallback(callback func()) (T, bool) {
 	return wrapped.value, false
 }
 
-// ShutDown initiates shutdown.
 func (q *queue[T]) ShutDown() {
 	q.delegate.ShutDown()
 }
 
-// ShutDownWithDrain initiates shutdown and blocks until all queued items have been retrieved.
 func (q *queue[T]) ShutDownWithDrain() {
 	q.delegate.ShutDownWithDrain()
 }
 
-// ShuttingDown returns true if shutdown has been initiated.
 func (q *queue[T]) ShuttingDown() bool {
 	return q.delegate.ShuttingDown()
 }

@@ -78,9 +78,6 @@ type collapsingQueue[T comparable] struct {
 	stopOnce sync.Once
 }
 
-// Add marks item as needing processing. When the queue is shutdown new
-// items will silently be ignored and not queued or marked as dirty for
-// reprocessing.
 func (q *collapsingQueue[T]) Add(item T) {
 	q.cond.L.Lock()
 	defer q.cond.L.Unlock()
@@ -100,9 +97,6 @@ func (q *collapsingQueue[T]) Add(item T) {
 	q.cond.Signal()
 }
 
-// Len returns the current queue length, for informational purposes only. You
-// shouldn't e.g. gate a call to Add() or Get() on Len() being a particular
-// value, that can't be synchronized properly.
 func (q *collapsingQueue[T]) Len() int {
 	q.cond.L.Lock()
 	defer q.cond.L.Unlock()
@@ -113,9 +107,6 @@ func (q *collapsingQueue[T]) Get() (item T, shutdown bool) {
 	return q.GetWithCallback(nil)
 }
 
-// Get blocks until it can return an item to be processed. If shutdown = true,
-// the caller should end their goroutine. You must call Done with item when you
-// have finished processing it.
 func (q *collapsingQueue[T]) GetWithCallback(callback func()) (item T, shutdown bool) {
 	q.cond.L.Lock()
 	defer func() {
@@ -140,9 +131,6 @@ func (q *collapsingQueue[T]) GetWithCallback(callback func()) (item T, shutdown 
 	return item, false
 }
 
-// Done marks item as done processing, and if it has been marked as dirty again
-// while it was being processed, it will be re-added to the queue for
-// re-processing.
 func (q *collapsingQueue[T]) Done(item T) {
 	q.cond.L.Lock()
 	defer q.cond.L.Unlock()
@@ -156,9 +144,6 @@ func (q *collapsingQueue[T]) Done(item T) {
 	}
 }
 
-// ShutDown will cause q to ignore all new items added to it. Worker
-// goroutines will continue processing items in the queue until it is
-// empty and then receive the shutdown signal.
 func (q *collapsingQueue[T]) ShutDown() {
 	defer q.wg.Wait()
 	q.stopOnce.Do(func() {
@@ -173,12 +158,6 @@ func (q *collapsingQueue[T]) ShutDown() {
 	q.cond.Broadcast()
 }
 
-// ShutDownWithDrain is equivalent to ShutDown but waits until all items
-// in the queue have been processed.
-// ShutDown can be called after ShutDownWithDrain to force
-// ShutDownWithDrain to stop waiting.
-// Workers must call Done on an item after processing it, otherwise
-// ShutDownWithDrain will block indefinitely.
 func (q *collapsingQueue[T]) ShutDownWithDrain() {
 	defer q.wg.Wait()
 	q.stopOnce.Do(func() {
