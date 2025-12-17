@@ -66,7 +66,7 @@ func TestFunctionWorkerPool_SubmitWithCallback(t *testing.T) {
 		fn := function.NewFunctionFromFunc(func(ctx context.Context, arg int) (string, error) {
 			return "result", nil
 		})
-		pool := NewDefaultFunctionWorkerPool(context.Background(), fn).(*defaultFunctionWorkerPool[int, string])
+		pool := NewDefaultFunctionWorkerPool(context.Background(), fn)
 		var callbackCalled atomic.Bool
 		var callbackArg atomic.Int32
 		var callbackResult atomic.Value
@@ -89,7 +89,7 @@ func TestFunctionWorkerPool_SubmitWithCallback(t *testing.T) {
 		fn := function.NewFunctionFromFunc(func(ctx context.Context, arg int) (string, error) {
 			return "", expectedErr
 		})
-		pool := NewDefaultFunctionWorkerPool(context.Background(), fn).(*defaultFunctionWorkerPool[int, string])
+		pool := NewDefaultFunctionWorkerPool(context.Background(), fn)
 		var callbackCalled atomic.Bool
 		var callbackArg atomic.Int32
 		var callbackResult atomic.Value
