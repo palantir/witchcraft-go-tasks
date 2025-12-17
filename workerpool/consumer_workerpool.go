@@ -12,7 +12,8 @@ type defaultConsumerWorkerPool[T any] struct {
 	processor  function.Consumer[T]
 }
 
-func NefaultConsumerWorkerPool[T any](ctx context.Context, processor function.Consumer[T], options ...Option) ConsumerWorkerPool[T] {
+// NewDefaultConsumerWorkerPool returns a default ConsumerWorkerPool[T]
+func NewDefaultConsumerWorkerPool[T any](ctx context.Context, processor function.Consumer[T], options ...Option) ConsumerWorkerPool[T] {
 	return &defaultConsumerWorkerPool[T]{
 		workerPool: NewDefaultRunnableWorkerPool(ctx, options...),
 		processor:  processor,
