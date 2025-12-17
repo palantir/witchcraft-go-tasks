@@ -30,7 +30,8 @@ type Queue[T any] interface {
 	// informational only and should not be used for synchronization decisions.
 	Len() int
 	// Get blocks until an item is available and returns it. If shutdown is true,
-	// the queue has been shut down and the caller should exit their processing loop.
+	// the queue has been shut down: in this case, the returned item is the zero
+	// value of T and should be ignored, and the caller should exit their processing loop.
 	Get() (item T, shutdown bool)
 	// GetWithCallback is like Get but invokes the callback while holding the queue
 	// lock, before returning. This can be used to perform atomic operations when
