@@ -14,7 +14,7 @@
 
 package queue
 
-// queue is a slice which implements Queue.
+// queueWrapper is a named type for a slice that implements queue functions.
 type queueWrapper[T comparable] []T
 
 func (q *queueWrapper[T]) Push(item T) {
@@ -27,7 +27,7 @@ func (q *queueWrapper[T]) Len() int {
 
 func (q *queueWrapper[T]) Pop() (item T) {
 	item = (*q)[0]
-	// The underlying array still exists and reference this object, so the object will not be garbage collected.
+	// manually zero out the old element to allow it to be garbage collected
 	(*q)[0] = *new(T)
 	*q = (*q)[1:]
 	return item

@@ -32,9 +32,10 @@ import (
 // item was re-added while being processed, Done() will re-queue it for processing.
 type CollapsingQueue[T comparable] interface {
 	Queue[T]
-	// Done marks the item as finished processing. If the item was re-added to the
+	// Done marks the item as finished processing, and must be called once for each
+	// item returned by Get or GetWithCallback. If the item was re-added to the
 	// queue while it was being processed, it will be re-queued for another processing
-	// cycle. Must be called exactly once for each successful Get() call.
+	// cycle.
 	Done(item T)
 }
 
@@ -109,17 +110,12 @@ func (q *collapsingQueue[T]) Get() (item T, shutdown bool) {
 
 func (q *collapsingQueue[T]) GetWithCallback(callback func()) (item T, shutdown bool) {
 	q.cond.L.Lock()
-	defer func() {
-		if callback != nil {
-			callback()
-		}
-		q.cond.L.Unlock()
-	}()
+	defer q.cond.L.Unlock()
 	for q.queue.Len() == 0 && !q.shuttingDown {
 		q.cond.Wait()
 	}
 	if q.queue.Len() == 0 {
-		// We must be shutting down.
+		// We must be shutting down - don't call callback.
 		return *new(T), true
 	}
 
@@ -128,6 +124,9 @@ func (q *collapsingQueue[T]) GetWithCallback(callback func()) (item T, shutdown 
 	q.processing.Insert(item)
 	q.dirty.Delete(item)
 
+	if callback != nil {
+		callback()
+	}
 	return item, false
 }
 

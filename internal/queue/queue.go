@@ -17,8 +17,8 @@ package queue
 // Queue is a thread-safe generic work queue that provides blocking Get operations
 // and graceful shutdown capabilities. Items are processed in FIFO order.
 //
-// Unlike CollapsingQueue, this queue does not deduplicate items - each Add() results
-// in a corresponding Get(). This is suitable for task queues where every submitted
+// Unlike CollapsingQueue, this queue does not deduplicate items - every call to Add() adds an element that can be retrieved
+// by a corresponding Get(). This is suitable for task queues where every submitted
 // item must be processed exactly once.
 //
 // The type parameter T can be any type since no comparison is needed.
@@ -26,21 +26,32 @@ type Queue[T any] interface {
 	// Add enqueues an item for processing. If the queue is shutting down,
 	// the item is silently ignored.
 	Add(item T)
-	// Len returns the current number of items waiting in the queue. This is
-	// informational only and should not be used for synchronization decisions.
+	// Len returns the current number of items waiting to be processed in the queue.
+	// This is informational only and should not be used for synchronization decisions.
 	Len() int
 	// Get blocks until an item is available and returns it. If shutdown is true,
-	// the queue has been shut down and the caller should exit their processing loop.
+	// the queue has been shut down: in this case, the returned item is the zero
+	// value of T and should be ignored, and the caller should exit their processing loop.
 	Get() (item T, shutdown bool)
 	// GetWithCallback is like Get but invokes the callback while holding the queue
 	// lock, before returning. This can be used to perform atomic operations when
 	// an item is dequeued.
+	// The callback is not invoked if the queue is shutdown
 	GetWithCallback(callback func()) (item T, shutdown bool)
-	// ShutDown initiates shutdown. New Add() calls are ignored. Blocked Get() calls
-	// will return with shutdown=true once the queue is empty.
+	// ShutDown initiates shutdown and returns (does not block).
+	// Once this function is called, new items cannot be added
+	// (Add() becomes a noop). Any elements in the queue that
+	// were present before it started shutting down will still be returned
+	// by Get() calls with shutdown=false. Once the queue is empty,
+	// Get() calls will return with shutdown=true.
 	ShutDown()
 	// ShutDownWithDrain initiates shutdown and blocks until all queued items have
-	// been retrieved via Get(). Can be interrupted by calling ShutDown().
+	// been retrieved via Get(). Once this function is called, new items cannot be added
+	// (Add() becomes a noop). Any elements in the queue that
+	// were present before it started shutting down will still be returned
+	// by Get() calls with shutdown=false. Once the queue is empty,
+	// Get() calls will return with shutdown=true. If Shutdown() is called, it will interrupt
+	// any ShutDownWithDrain calls and cause them to return immediately.
 	ShutDownWithDrain()
 	// ShuttingDown returns true if ShutDown() or ShutDownWithDrain() has been called.
 	ShuttingDown() bool
@@ -54,9 +65,10 @@ func NewQueue[T any]() Queue[T] {
 	}
 }
 
-// item wraps a value with a pointer to prevent collapsing.
-// Pointers are always comparable (by address), so *item[T] satisfies comparable
-// even when T doesn't. Each Add creates a new pointer, ensuring uniqueness.
+// item wraps a value. Under the hood, the queue stores *item[T] elements.
+// Because pointers are always comparable (by address), *item[T] satisfies comparable
+// even when T doesn't. Each Add creates a new pointer, ensuring uniqueness
+// (which also prevents collapsing elements).
 type item[T any] struct {
 	value T
 }

@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/palantir/witchcraft-go-health/conjure/witchcraft/api/health"
-	"github.com/palantir/witchcraft-go-health/sources/window"
+	"github.com/palantir/witchcraft-go-health/v2/conjure/witchcraft/api/health"
+	"github.com/palantir/witchcraft-go-health/v2/sources/window"
 	"github.com/palantir/witchcraft-go-tasks/internal/testcontext"
 	"github.com/palantir/witchcraft-go-tasks/runnable"
 	"github.com/stretchr/testify/assert"
