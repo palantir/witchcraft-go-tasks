@@ -26,8 +26,8 @@ type Queue[T any] interface {
 	// Add enqueues an item for processing. If the queue is shutting down,
 	// the item is silently ignored.
 	Add(item T)
-	// Len returns the current number of items waiting in the queue. This is
-	// informational only and should not be used for synchronization decisions.
+	// Len returns the current number of items waiting to be processed in the queue.
+	// This is informational only and should not be used for synchronization decisions.
 	Len() int
 	// Get blocks until an item is available and returns it. If shutdown is true,
 	// the queue has been shut down: in this case, the returned item is the zero
