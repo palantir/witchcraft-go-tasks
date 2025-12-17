@@ -104,6 +104,23 @@ func TestCollapsingQueue_GetWithNilCallback(t *testing.T) {
 	q.Done(item)
 }
 
+func TestCollapsingQueue_GetWithCallbackNotCalledOnShutdown(t *testing.T) {
+	q := NewCollapsingQueue[string]()
+	var callbackCalled bool
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, shutdown := q.GetWithCallback(func() {
+			callbackCalled = true
+		})
+		assert.True(t, shutdown)
+	}()
+	q.ShutDown()
+	wg.Wait()
+	assert.False(t, callbackCalled)
+}
+
 func TestCollapsingQueue_GetBlocksUntilItemAdded(t *testing.T) {
 	q := NewCollapsingQueue[string]()
 	var item string

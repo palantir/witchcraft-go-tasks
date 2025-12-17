@@ -110,17 +110,12 @@ func (q *collapsingQueue[T]) Get() (item T, shutdown bool) {
 
 func (q *collapsingQueue[T]) GetWithCallback(callback func()) (item T, shutdown bool) {
 	q.cond.L.Lock()
-	defer func() {
-		if callback != nil {
-			callback()
-		}
-		q.cond.L.Unlock()
-	}()
+	defer q.cond.L.Unlock()
 	for q.queue.Len() == 0 && !q.shuttingDown {
 		q.cond.Wait()
 	}
 	if q.queue.Len() == 0 {
-		// We must be shutting down.
+		// We must be shutting down - don't call callback.
 		return *new(T), true
 	}
 
@@ -129,6 +124,9 @@ func (q *collapsingQueue[T]) GetWithCallback(callback func()) (item T, shutdown 
 	q.processing.Insert(item)
 	q.dirty.Delete(item)
 
+	if callback != nil {
+		callback()
+	}
 	return item, false
 }
 
