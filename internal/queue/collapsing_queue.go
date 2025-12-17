@@ -49,7 +49,7 @@ func NewCollapsingQueue[T comparable]() CollapsingQueue[T] {
 	}
 }
 
-type collapsingQueue[t comparable] struct {
+type collapsingQueue[T comparable] struct {
 	// queue defines the order in which we will work on items. Every
 	// element of queue should be in the dirty set and not in the
 	// processing set.

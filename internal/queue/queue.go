@@ -33,8 +33,11 @@ type Queue[T any] interface {
 	// Len returns the current number of items waiting in the queue. This is
 	// informational only and should not be used for synchronization decisions.
 	Len() int
-	// Get blocks until an item is available and returns it. If shutdown is true,
-	// the queue has been shut down and the caller should exit their processing loop.
+	// Get returns the next item in the queue. If the queue is empty, Get blocks until an item is
+	// available and then returns it. If the shutdown return value is true, it indicates that the queue
+	// has been shut down -- in this case, the returned item will be the zero value of the type T.
+	// Once a queue has been shut down, it will never return any more elements, so the caller should
+	// exit their processing loop.
 	Get() (item T, shutdown bool)
 	// GetWithCallback is like Get but invokes the callback while holding the queue
 	// lock, before returning. This can be used to perform atomic operations when
