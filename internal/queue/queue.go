@@ -55,9 +55,10 @@ func NewQueue[T any]() Queue[T] {
 	}
 }
 
-// item wraps a value with a pointer to prevent collapsing.
-// Pointers are always comparable (by address), so *item[T] satisfies comparable
-// even when T doesn't. Each Add creates a new pointer, ensuring uniqueness.
+// item wraps a value. Under the hood, the queue stores *item[T] elements.
+// Because pointers are always comparable (by address), *item[T] satisfies comparable
+// even when T doesn't. Each Add creates a new pointer, ensuring uniqueness
+// (which also prevents collapsing elements).
 type item[T any] struct {
 	value T
 }
