@@ -17,8 +17,8 @@ package queue
 // Queue is a thread-safe generic work queue that provides blocking Get operations
 // and graceful shutdown capabilities. Items are processed in FIFO order.
 //
-// Unlike CollapsingQueue, this queue does not deduplicate items - each Add() results
-// in a corresponding Get(). This is suitable for task queues where every submitted
+// Unlike CollapsingQueue, this queue does not deduplicate items - every call to Add() adds an element that can be retrieved
+// by a corresponding Get(). This is suitable for task queues where every submitted
 // item must be processed exactly once.
 //
 // The type parameter T can be any type since no comparison is needed.
