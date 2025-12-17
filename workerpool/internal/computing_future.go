@@ -26,7 +26,7 @@ import (
 // ComputingFuture implements async.Future[T].
 // In additional it exposes Compute(ctx context.Context). Compute is a synchronous function that will run the supplier
 // The underlying Get function will not return until compute is finished
-// We explicitly do not check for context cancellation in this future and if the client for context timeouts to propagate their given supplier must handle it
+// ComputingFuture implements async.Future[T] and defines the Compute(ctx context.Context) function.
 type ComputingFuture[T any] interface {
 	async.Future[T]
 	Compute(ctx context.Context)
