@@ -218,7 +218,7 @@ func Test_WorkerpoolFetching_LargeScaleUp(t *testing.T) {
 }
 
 func Test_SerialWorkerpoolFetching_WithPanics(t *testing.T) {
-	workerPool := NewDefaultSupplierWorkerPool[string](context.Background(), WithMaxNumberOfThreads(1))
+	workerPool := NewDefaultSupplierWorkerPool[string](context.Background(), WithMaxNumberOfWorkers(1))
 	workerPoolTyped := workerPool.(*defaultSupplierWorkerPool[string])
 	noPanicYet := true
 	simpleGet := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
