@@ -81,7 +81,7 @@ func Test_SerialWorkerpoolFetching(t *testing.T) {
 
 func Test_SerialWorkerpoolFetching_WorkerCap(t *testing.T) {
 	start := time.Now()
-	workerPool := NewDefaultSupplierWorkerPool[string](context.Background(), WithMaxNumberOfThreads(2))
+	workerPool := NewDefaultSupplierWorkerPool[string](context.Background(), WithMaxNumberOfWorkers(2))
 	workerPoolTyped := workerPool.(*defaultSupplierWorkerPool[string])
 	simpleGet := function.NewSupplierFromFunc(func(ctx context.Context) (string, error) {
 		time.Sleep(time.Millisecond * 500)
