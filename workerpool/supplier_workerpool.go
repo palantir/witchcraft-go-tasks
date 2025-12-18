@@ -130,7 +130,7 @@ func (d *defaultSupplierWorkerPool[R]) runWorkerLoop(workerContext context.Conte
 func (d *defaultSupplierWorkerPool[R]) needAdditionalWorker() bool {
 	notDoingWorkCount := int(d.numberFree.Load())
 	mapSize := d.getCurrentCount()
-	if d.config.maxNumberOfWorkers != nil && *d.config.maxNumberOfWorkers == mapSize {
+	if d.config.maxNumberOfWorkers != nil && *d.config.maxNumberOfWorkers <= mapSize {
 		return false
 	}
 	// If everything is working, we must give a new worker
