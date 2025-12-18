@@ -105,6 +105,7 @@ func (d *defaultSupplierWorkerPool[R]) startWorkerAsync() {
 	ctx := svc1log.WithLoggerParams(d.parentContextForWorkerThreads, svc1log.SafeParam("workerID", workerID))
 	go d.startWorker(ctx)
 }
+
 func (d *defaultSupplierWorkerPool[R]) runWorkerLoop(workerContext context.Context) {
 	// initialSubmitMade is needed so that we ensure that the first submission was tied to the submit that triggered it
 	initialSubmitMade := false
