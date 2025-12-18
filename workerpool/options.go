@@ -25,7 +25,7 @@ type Option = func(c *Config) *Config
 // By default this is un-set and an unlimited number of workers may be used
 // Each worker is a single goroutine
 // If a value of less than 1 is provided, it is ignored
-func WithMaxNumberOfThreads(maxNumberOfThreads int) Option {
+func WithMaxNumberOfWorkers(maxNumberOfThreads int) Option {
 	return func(c *Config) *Config {
 		if maxNumberOfThreads < 1 {
 			return c
