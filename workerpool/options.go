@@ -23,7 +23,7 @@ type Option = func(c *Config) *Config
 
 // WithMaxNumberOfThreads allows users to set maximum number of workers the workerpool will spin up
 // By default this is un-set and an unlimited number of workers may be used
-// Each worker is a single go-routine
+// Each worker is a single goroutine
 func WithMaxNumberOfThreads(maxNumberOfThreads int) Option {
 	return func(c *Config) *Config {
 		c.maxNumberOfWorkers = &maxNumberOfThreads
