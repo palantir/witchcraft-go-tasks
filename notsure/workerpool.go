@@ -34,6 +34,7 @@ type defaultWorkerPool[T constraint] struct {
 
 // NewDefaultWorkerPool instantiates a worker pool
 func NewDefaultWorkerPool[T constraint](
+	ctx context.Context,
 	consumerWorkerPool workerpool.ConsumerWorkerPool[T],
 	k8sKeyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource,
 	options ...JobOption[T]) ElementProcessor[T] {
@@ -49,6 +50,7 @@ func NewDefaultWorkerPool[T constraint](
 	for _, option := range options {
 		option.apply(defaultWorkerPoolArg)
 	}
+	go defaultWorkerPoolArg.startPullingFromQueue(ctx)
 	return defaultWorkerPoolArg
 }
 
@@ -56,14 +58,13 @@ func (d defaultWorkerPool[T]) Submit(ctx context.Context, element T) {
 	d.queue.Add(element)
 }
 
-func (d defaultWorkerPool[T]) runWorkerLoopREAL(ctx context.Context) {
+func (d defaultWorkerPool[T]) startPullingFromQueue(ctx context.Context) {
 	for {
 		element, shutdown := d.queue.Get()
 		if shutdown {
 			svc1log.FromContext(ctx).Warn("Queue shutting down; workers stopping.")
 			return
 		}
-
 		d.singleProcessAttempt(ctx, element)
 		// TODO need NAME
 		metrics.FromContext(ctx).Gauge("com.palantir.witchcraft.queue_length").Update(int64(d.queue.Len()))
