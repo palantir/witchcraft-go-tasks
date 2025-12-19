@@ -25,6 +25,7 @@ type ItemSubmitterOption[T constraint] interface {
 
 type itemSubmitterOptionFunc[T constraint] func(*defaultItemSubmitter[T])
 
+//nolint:unused // implements ItemSubmitterOption interface
 func (f itemSubmitterOptionFunc[T]) apply(i *defaultItemSubmitter[T]) {
 	f(i)
 }
