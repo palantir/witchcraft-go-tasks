@@ -16,6 +16,7 @@ package queue
 
 import (
 	"sync"
+	"time"
 
 	"github.com/palantir/witchcraft-go-tasks/util/collections"
 )
@@ -37,16 +38,21 @@ type CollapsingQueue[T comparable] interface {
 	// queue while it was being processed, it will be re-queued for another processing
 	// cycle.
 	Done(item T)
+
+	AddRateLimited(item T)
+	Forget(item T)
+	NumRequeues(item T) int
 }
 
 // NewCollapsingQueue constructs a new deduplicating work queue.
 func NewCollapsingQueue[T comparable]() CollapsingQueue[T] {
 	return &collapsingQueue[T]{
-		queue:      new(queueWrapper[T]),
-		dirty:      collections.Set[T]{},
-		processing: collections.Set[T]{},
-		cond:       sync.NewCond(&sync.Mutex{}),
-		stopCh:     make(chan struct{}),
+		queue:       new(queueWrapper[T]),
+		dirty:       collections.Set[T]{},
+		processing:  collections.Set[T]{},
+		cond:        sync.NewCond(&sync.Mutex{}),
+		stopCh:      make(chan struct{}),
+		rateLimiter: NewItemExponentialFailureRateLimiter[T](time.Millisecond*500, time.Second*10),
 	}
 }
 
@@ -77,6 +83,31 @@ type collapsingQueue[T comparable] struct {
 	stopCh chan struct{}
 	// stopOnce guarantees we only signal shutdown a single time
 	stopOnce sync.Once
+
+	rateLimiter RateLimiter[T]
+}
+
+func (q *collapsingQueue[T]) AddRateLimited(item T) {
+	delay := q.rateLimiter.When(item)
+	if delay <= 0 {
+		q.Add(item)
+		return
+	}
+	q.wg.Add(1)
+	time.AfterFunc(delay, func() {
+		defer q.wg.Done()
+		if !q.ShuttingDown() {
+			q.Add(item)
+		}
+	})
+}
+
+func (q *collapsingQueue[T]) Forget(item T) {
+	q.rateLimiter.Forget(item)
+}
+
+func (q *collapsingQueue[T]) NumRequeues(item T) int {
+	return q.rateLimiter.NumRequeues(item)
 }
 
 func (q *collapsingQueue[T]) Add(item T) {
