@@ -29,12 +29,16 @@ func (f itemSubmitterOptionFunc[T]) apply(i *defaultItemSubmitter[T]) {
 	f(i)
 }
 
+// WithMaxNumRequeues sets the maximum number of times an item will be requeued
+// after processing failures before being dropped. Defaults to 5 if not specified.
 func WithMaxNumRequeues[T constraint](maxNumRequeues int) ItemSubmitterOption[T] {
 	return itemSubmitterOptionFunc[T](func(defaultItemSubmitterArg *defaultItemSubmitter[T]) {
 		defaultItemSubmitterArg.maxNumRequeues = maxNumRequeues
 	})
 }
 
+// WithErrorLogger sets a custom error logging function called when item processing
+// fails. By default, errors are logged using svc1log at ERROR level with a stacktrace.
 func WithErrorLogger[T constraint](errorLogger func(ctx context.Context, err error)) ItemSubmitterOption[T] {
 	return itemSubmitterOptionFunc[T](func(defaultItemSubmitterArg *defaultItemSubmitter[T]) {
 		defaultItemSubmitterArg.logError = errorLogger
