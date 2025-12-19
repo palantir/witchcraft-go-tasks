@@ -1,4 +1,4 @@
-package notsure
+package executor
 
 import (
 	"context"
@@ -68,7 +68,6 @@ func (d defaultWorkerPool[T]) startPullingFromQueue(ctx context.Context) {
 		d.singleProcessAttempt(ctx, element)
 		// TODO need NAME
 		metrics.FromContext(ctx).Gauge("com.palantir.witchcraft.queue_length").Update(int64(d.queue.Len()))
-
 	}
 }
 

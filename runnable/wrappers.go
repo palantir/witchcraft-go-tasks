@@ -24,7 +24,7 @@ import (
 	"github.com/palantir/witchcraft-go-tasks/function"
 )
 
-// ErrorFn is a callback function for handling errors from runnable execution.
+// ErrorFn is a callback function for handling errors from runnable executor.
 // It receives the context and the error that occurred.
 type ErrorFn func(ctx context.Context, err error)
 
@@ -56,7 +56,7 @@ func WithFatalLogging() Wrapper {
 }
 
 // WithServiceLogging adds the runnable name to the context and
-// adds log lines at the start and at the end of the execution.
+// adds log lines at the start and at the end of the executor.
 func WithServiceLogging() Wrapper {
 	return func(runnable function.NamedRunnable) function.NamedRunnable {
 		return New(runnable.Name(), func(ctx context.Context) error {

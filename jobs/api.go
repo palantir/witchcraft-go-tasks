@@ -29,7 +29,7 @@ type Job interface {
 	ShouldStartImmediately(ctx context.Context) bool
 	// GetInterval returns the duration between job executions.
 	GetInterval(ctx context.Context) time.Duration
-	// LogError is called if the job returns an error during execution.
+	// LogError is called if the job returns an error during executor.
 	LogError(ctx context.Context, err error)
 }
 

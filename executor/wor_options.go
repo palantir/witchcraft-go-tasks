@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package notsure
+package executor
 
 import (
 	"context"
@@ -30,7 +30,7 @@ func (f jobOptionFunc[T]) apply(job *defaultWorkerPool[T]) {
 }
 
 // WithInterval sets the duration between job executions.
-// The interval is measured from the start of one execution to the start of the next.
+// The interval is measured from the start of one executor to the start of the next.
 // Default is 1 minute if not specified.
 func WithInterval[T constraint](maxNumRequeues int) JobOption[T] {
 	return jobOptionFunc[T](func(job *defaultWorkerPool[T]) {
