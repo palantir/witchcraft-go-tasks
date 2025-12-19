@@ -32,8 +32,21 @@ type constraint interface {
 	fmt.Stringer
 }
 
+// ItemSubmitter provides a fire-and-forget interface for submitting items to be processed
+// asynchronously with automatic retry, deduplication, and health reporting.
+//
+// Items are placed in a collapsing queue that deduplicates entries - if the same item is
+// submitted multiple times while queued or being processed, duplicates are collapsed. A
+// background goroutine pulls items and delegates processing to a ConsumerWorkerPool.
+//
+// On failure, items are requeued with exponential backoff (500ms base, 10s max) up to
+// maxNumRequeues times (default 5). Processing results are reported to a
+// KeyedErrorHealthCheckSource using each item's String() value as the key.
+//
+// Items must implement comparable (for deduplication) and fmt.Stringer (for health keys).
 type ItemSubmitter[T constraint] interface {
-	// Submit adds an item to the queue for eventual consumption
+	// Submit adds an item to the queue for eventual processing. Returns immediately;
+	// processing happens asynchronously. Duplicate submissions are collapsed.
 	Submit(context.Context, T)
 }
 type defaultItemSubmitter[T constraint] struct {
@@ -45,7 +58,8 @@ type defaultItemSubmitter[T constraint] struct {
 	maxNumRequeues int
 }
 
-// NewDefaultItemSubmitter instantiates a ItemSubmitter
+// NewDefaultItemSubmitter creates a new ItemSubmitter and starts its background processing
+// goroutine. The goroutine runs until ctx is cancelled.
 func NewDefaultItemSubmitter[T constraint](
 	ctx context.Context,
 	consumerWorkerPool workerpool.ConsumerWorkerPool[T],
