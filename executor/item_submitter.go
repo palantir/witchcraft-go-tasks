@@ -32,12 +32,11 @@ type constraint interface {
 	fmt.Stringer
 }
 
-// ElementProcessor is a wrapper around a rate limited queue backed by the K8s util library
-type ElementProcessor[T constraint] interface {
-	// Submit adds an element to the queue for eventual consumption
+type ItemSubmitter[T constraint] interface {
+	// Submit adds an item to the queue for eventual consumption
 	Submit(context.Context, T)
 }
-type defaultWorkerPool[T constraint] struct {
+type defaultItemSubmitter[T constraint] struct {
 	consumerWorkerPool             workerpool.ConsumerWorkerPool[T]
 	k8sKeyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
 	queue                          queue.CollapsingQueue[T]
@@ -46,13 +45,13 @@ type defaultWorkerPool[T constraint] struct {
 	maxNumRequeues int
 }
 
-// NewDefaultWorkerPool instantiates a worker pool
-func NewDefaultWorkerPool[T constraint](
+// NewDefaultItemSubmitter instantiates a ItemSubmitter
+func NewDefaultItemSubmitter[T constraint](
 	ctx context.Context,
 	consumerWorkerPool workerpool.ConsumerWorkerPool[T],
 	k8sKeyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource,
-	options ...JobOption[T]) ElementProcessor[T] {
-	defaultWorkerPoolArg := &defaultWorkerPool[T]{
+	options ...ItemSubmitterOption[T]) ItemSubmitter[T] {
+	defaultItemSubmitterArg := &defaultItemSubmitter[T]{
 		consumerWorkerPool:             consumerWorkerPool,
 		k8sKeyedErrorHealthCheckSource: k8sKeyedErrorHealthCheckSource,
 		queue:                          queue.NewCollapsingQueue[T](),
@@ -62,17 +61,17 @@ func NewDefaultWorkerPool[T constraint](
 		maxNumRequeues: 5,
 	}
 	for _, option := range options {
-		option.apply(defaultWorkerPoolArg)
+		option.apply(defaultItemSubmitterArg)
 	}
-	go defaultWorkerPoolArg.startPullingFromQueue(ctx)
-	return defaultWorkerPoolArg
+	go defaultItemSubmitterArg.startPullingFromQueue(ctx)
+	return defaultItemSubmitterArg
 }
 
-func (d defaultWorkerPool[T]) Submit(ctx context.Context, element T) {
+func (d defaultItemSubmitter[T]) Submit(ctx context.Context, element T) {
 	d.queue.Add(element)
 }
 
-func (d defaultWorkerPool[T]) startPullingFromQueue(ctx context.Context) {
+func (d defaultItemSubmitter[T]) startPullingFromQueue(ctx context.Context) {
 	for {
 		element, shutdown := d.queue.Get()
 		if shutdown {
@@ -85,9 +84,9 @@ func (d defaultWorkerPool[T]) startPullingFromQueue(ctx context.Context) {
 	}
 }
 
-func (d defaultWorkerPool[T]) singleProcessAttempt(ctx context.Context, element T) {
+func (d defaultItemSubmitter[T]) singleProcessAttempt(ctx context.Context, element T) {
 	startTime := time.Now()
-	span, ctx := wtracing.StartSpanFromTracerInContext(ctx, "defaultWorkerPool.runSingleJob")
+	span, ctx := wtracing.StartSpanFromTracerInContext(ctx, "defaultItemSubmitter.runSingleJob")
 	defer span.Finish()
 	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("queueElementIdentifier", element.String()))
 	d.consumerWorkerPool.SubmitWithCallback(ctx, element, func(ctx context.Context, elem T, err error) {
@@ -103,7 +102,7 @@ func (d defaultWorkerPool[T]) singleProcessAttempt(ctx context.Context, element 
 	})
 }
 
-func (d defaultWorkerPool[T]) handleProcessError(ctx context.Context, element T, err error) {
+func (d defaultItemSubmitter[T]) handleProcessError(ctx context.Context, element T, err error) {
 	numRequeues := d.queue.NumRequeues(element)
 	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("maxNumRequeues", d.maxNumRequeues), svc1log.SafeParam("numRequeues", numRequeues))
 	d.logError(ctx, err)
