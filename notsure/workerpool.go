@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/palantir/pkg/metrics"
 	"github.com/palantir/witchcraft-go-health/v2/sources/window"
 	"github.com/palantir/witchcraft-go-logging/wlog/svclog/svc1log"
-	"github.com/palantir/witchcraft-go-logging/wlog/wapp"
 	"github.com/palantir/witchcraft-go-tasks/internal/queue"
 	"github.com/palantir/witchcraft-go-tasks/workerpool"
 	"github.com/palantir/witchcraft-go-tracing/wtracing"
@@ -62,17 +62,22 @@ func (d defaultWorkerPool[T]) runWorkerLoopREAL(ctx context.Context) {
 			svc1log.FromContext(ctx).Warn("Queue shutting down; workers stopping.")
 			return
 		}
+
 		d.singleProcessAttempt(ctx, element)
-		wccmetrics.WccMetrics(ctx).QueueLength().WorkerPoolName(d.workerPoolName).Gauge().Update(int64(d.queue.Len()))
+		// TODO need NAME
+		metrics.FromContext(ctx).Gauge("com.palantir.witchcraft.queue_length").Update(int64(d.queue.Len()))
 
 	}
 }
 
 func (d defaultWorkerPool[T]) singleProcessAttempt(ctx context.Context, element T) {
+	startTime := time.Now()
 	span, ctx := wtracing.StartSpanFromTracerInContext(ctx, "defaultWorkerPool.runSingleJob")
 	defer span.Finish()
 	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("queueElementIdentifier", element.String()))
 	d.consumerWorkerPool.SubmitWithCallback(ctx, element, func(ctx context.Context, elem T, err error) {
+		// TODO NEED NAME
+		metrics.FromContext(ctx).Timer("com.palantir.witchcraft.process_element_duration").UpdateSince(startTime)
 		d.k8sKeyedErrorHealthCheckSource.Submit(ctx, elem.String(), err)
 		d.queue.Done(element)
 		if err != nil {
@@ -81,17 +86,6 @@ func (d defaultWorkerPool[T]) singleProcessAttempt(ctx context.Context, element 
 		}
 		d.queue.Forget(element)
 	})
-}
-
-func (d defaultWorkerPool[T]) runProcessorSingleTime(ctx context.Context, element T) error {
-	startTime := time.Now()
-	defer wccmetrics.WccMetrics(ctx).ProcessElementDuration().
-		WorkerPoolName(d.workerPoolName).
-		Timer().UpdateSince(startTime)
-	closure := func(ctx context.Context) error {
-		return d.elementProcessor.ProcessElement(ctx, element)
-	}
-	return wapp.RunWithRecoveryLoggingWithError(ctx, closure)
 }
 
 func (d defaultWorkerPool[T]) handleProcessError(ctx context.Context, element T, err error) {
