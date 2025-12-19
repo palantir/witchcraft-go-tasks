@@ -17,6 +17,8 @@ package executor
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -194,5 +196,40 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		}, time.Second, 10*time.Millisecond)
 		time.Sleep(100 * time.Millisecond)
 		assert.Less(t, processCount.Load(), int32(10), "duplicates should be collapsed")
+	})
+	t.Run("handles concurrent submissions from multiple goroutines", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+		defer cancel()
+		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
+		var processedItems sync.Map
+		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
+			processedItems.Store(item, true)
+			return nil
+		})
+		pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
+		submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource)
+		numGoroutines := 10
+		numItemsPerGoroutine := 10
+		var wg sync.WaitGroup
+		for g := 0; g < numGoroutines; g++ {
+			wg.Add(1)
+			go func(goroutineID int) {
+				defer wg.Done()
+				for i := 0; i < numItemsPerGoroutine; i++ {
+					item := testItem(fmt.Sprintf("item-%d-%d", goroutineID, i))
+					submitter.Submit(ctx, item)
+				}
+			}(g)
+		}
+		wg.Wait()
+		expectedItems := numGoroutines * numItemsPerGoroutine
+		assert.Eventually(t, func() bool {
+			count := 0
+			processedItems.Range(func(_, _ any) bool {
+				count++
+				return true
+			})
+			return count == expectedItems
+		}, 5*time.Second, 10*time.Millisecond)
 	})
 }
