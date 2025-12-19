@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package workerpool provides low-level worker pool primitives for concurrent task executor.
+// Package workerpool provides low-level worker pool primitives for concurrent task execution.
 //
 // Worker pools are advanced building blocks that manage goroutine lifecycles and task queuing.
 // They are exported to provide maximum flexibility for advanced use cases, but most users
