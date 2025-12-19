@@ -93,7 +93,6 @@ func (d defaultItemSubmitter[T]) startPullingFromQueue(ctx context.Context) {
 			return
 		}
 		d.singleProcessAttempt(ctx, element)
-		// TODO need NAME
 		metrics.FromContext(ctx).Gauge("com.palantir.witchcraft.queue_length").Update(int64(d.queue.Len()))
 	}
 }
@@ -104,7 +103,6 @@ func (d defaultItemSubmitter[T]) singleProcessAttempt(ctx context.Context, eleme
 	defer span.Finish()
 	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("queueElementIdentifier", element.String()))
 	d.consumerWorkerPool.SubmitWithCallback(ctx, element, func(ctx context.Context, elem T, err error) {
-		// TODO NEED NAME
 		metrics.FromContext(ctx).Timer("com.palantir.witchcraft.process_element_duration").UpdateSince(startTime)
 		d.k8sKeyedErrorHealthCheckSource.Submit(ctx, elem.String(), err)
 		d.queue.Done(element)
