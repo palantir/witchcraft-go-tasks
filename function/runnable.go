@@ -22,7 +22,7 @@ import (
 //
 // The Run method takes a context for cancellation/timeout support and returns
 // an error if the operation fails. Runnables are commonly used for background tasks,
-// periodic jobs, and composable executor units.
+// periodic jobs, and composable execution units.
 type Runnable interface {
 	Run(ctx context.Context) error
 }
