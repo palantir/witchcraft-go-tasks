@@ -49,7 +49,7 @@ func NewDefaultJob(name string, runnable function.Runnable, options ...JobOption
 		runnable: runnable,
 		interval: time.Minute,
 		logError: func(ctx context.Context, err error) {
-			svc1log.FromContext(ctx).Error("Encountered unexpected error during job executor", svc1log.Stacktrace(err))
+			svc1log.FromContext(ctx).Error("Encountered unexpected error during job execution", svc1log.Stacktrace(err))
 		},
 		startImmediately: false,
 	}

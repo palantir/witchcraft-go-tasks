@@ -31,7 +31,7 @@ func (f jobOptionFunc) apply(job *defaultJob) {
 }
 
 // WithInterval sets the duration between job executions.
-// The interval is measured from the start of one executor to the start of the next.
+// The interval is measured from the start of one execution to the start of the next.
 // Default is 1 minute if not specified.
 func WithInterval(interval time.Duration) JobOption {
 	return jobOptionFunc(func(job *defaultJob) {
@@ -50,7 +50,7 @@ func WithErrorLogger(errorLogger func(ctx context.Context, err error)) JobOption
 
 // WithStartImmediately controls whether the job executes immediately when started.
 // If true, the job runs once immediately before waiting for the first interval.
-// If false (default), the job waits for the first interval before its first executor.
+// If false (default), the job waits for the first interval before its first execution.
 func WithStartImmediately(startImmediately bool) JobOption {
 	return jobOptionFunc(func(job *defaultJob) {
 		job.startImmediately = startImmediately

@@ -138,7 +138,7 @@ func TestDefaultJobRunner_StartJobs(t *testing.T) {
 			return executed1.Load() && executed2.Load()
 		}, 100*time.Millisecond, 5*time.Millisecond)
 	})
-	t.Run("submits health check on job executor", func(t *testing.T) {
+	t.Run("submits health check on job execution", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
 		defer cancel()
 		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)

@@ -32,12 +32,12 @@ type defaultJobRunner struct {
 //
 // The runner executes each job in its own goroutine, respecting the job's interval and
 // start-immediately settings. It integrates with the provided KeyedErrorHealthCheckSource
-// to report job executor health status, submitting success or error after each job run.
+// to report job execution health status, submitting success or error after each job run.
 //
 // Features:
 //   - Runs each job asynchronously in a separate goroutine
-//   - Recovers from panics during job executor and logs them
-//   - Adds tracing spans for each job executor
+//   - Recovers from panics during job execution and logs them
+//   - Adds tracing spans for each job execution
 //   - Logs job lifecycle events (start, errors) via svc1log
 //   - Stops all jobs gracefully when the context is cancelled
 //
