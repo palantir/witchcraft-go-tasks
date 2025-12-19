@@ -39,8 +39,15 @@ type CollapsingQueue[T comparable] interface {
 	// cycle.
 	Done(item T)
 
+	// AddRateLimited adds an item to the queue after the rate limiter determines
+	// an appropriate delay. The delay increases with each requeue of the same item.
+	// Use this when re-adding items that failed processing to implement backoff.
 	AddRateLimited(item T)
+	// Forget resets the rate limiter's failure count for an item. Call this after
+	// successful processing to clear the backoff state.
 	Forget(item T)
+	// NumRequeues returns the number of times an item has been requeued via
+	// AddRateLimited. Returns 0 if the item has never been requeued or was forgotten.
 	NumRequeues(item T) int
 }
 

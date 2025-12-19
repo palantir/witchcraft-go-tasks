@@ -18,15 +18,15 @@ type constraint interface {
 	fmt.Stringer
 }
 
-// K8sWorkerPool is a wrapper around a rate limited queue backed by the K8s util library
-type K8sWorkerPool[T constraint] interface {
+// ElementProcessor is a wrapper around a rate limited queue backed by the K8s util library
+type ElementProcessor[T constraint] interface {
 	// Submit adds an element to the queue for eventual consumption
 	Submit(context.Context, T)
 }
 type defaultWorkerPool[T constraint] struct {
+	consumerWorkerPool             workerpool.ConsumerWorkerPool[T]
 	k8sKeyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
 	queue                          queue.CollapsingQueue[T]
-	consumerWorkerPool             workerpool.ConsumerWorkerPool[T]
 
 	logError       func(ctx context.Context, err error)
 	maxNumRequeues int
@@ -36,8 +36,9 @@ type defaultWorkerPool[T constraint] struct {
 func NewDefaultWorkerPool[T constraint](
 	consumerWorkerPool workerpool.ConsumerWorkerPool[T],
 	k8sKeyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource,
-	options ...JobOption[T]) K8sWorkerPool[T] {
+	options ...JobOption[T]) ElementProcessor[T] {
 	defaultWorkerPoolArg := &defaultWorkerPool[T]{
+		consumerWorkerPool:             consumerWorkerPool,
 		k8sKeyedErrorHealthCheckSource: k8sKeyedErrorHealthCheckSource,
 		queue:                          queue.NewCollapsingQueue[T](),
 		logError: func(ctx context.Context, err error) {

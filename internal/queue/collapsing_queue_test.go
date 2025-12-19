@@ -375,3 +375,64 @@ func TestCollapsingQueue_ShutDownWithDrainMultipleWorkers(t *testing.T) {
 	wg.Wait()
 	assert.Equal(t, int32(numItems), processed.Load())
 }
+
+func TestCollapsingQueue_AddRateLimited(t *testing.T) {
+	t.Run("adds item after delay", func(t *testing.T) {
+		q := NewCollapsingQueue[string]()
+		defer q.ShutDown()
+		q.AddRateLimited("item1")
+		assert.Equal(t, 0, q.Len())
+		assert.Eventually(t, func() bool {
+			return q.Len() == 1
+		}, testTimeout, testInterval)
+	})
+	t.Run("increases delay with each requeue", func(t *testing.T) {
+		q := NewCollapsingQueue[string]()
+		defer q.ShutDown()
+		q.AddRateLimited("item1")
+		assert.Equal(t, 1, q.NumRequeues("item1"))
+		q.AddRateLimited("item1")
+		assert.Equal(t, 2, q.NumRequeues("item1"))
+	})
+	t.Run("does not add item after shutdown", func(t *testing.T) {
+		q := NewCollapsingQueue[string]()
+		q.AddRateLimited("item1")
+		q.ShutDown()
+		assert.Equal(t, 0, q.Len())
+	})
+}
+
+func TestCollapsingQueue_Forget(t *testing.T) {
+	t.Run("resets requeue count", func(t *testing.T) {
+		q := NewCollapsingQueue[string]()
+		defer q.ShutDown()
+		q.AddRateLimited("item1")
+		q.AddRateLimited("item1")
+		assert.Equal(t, 2, q.NumRequeues("item1"))
+		q.Forget("item1")
+		assert.Equal(t, 0, q.NumRequeues("item1"))
+	})
+	t.Run("forget unknown item is no-op", func(t *testing.T) {
+		q := NewCollapsingQueue[string]()
+		defer q.ShutDown()
+		q.Forget("unknown")
+		assert.Equal(t, 0, q.NumRequeues("unknown"))
+	})
+}
+
+func TestCollapsingQueue_NumRequeues(t *testing.T) {
+	t.Run("returns zero for new item", func(t *testing.T) {
+		q := NewCollapsingQueue[string]()
+		defer q.ShutDown()
+		assert.Equal(t, 0, q.NumRequeues("item1"))
+	})
+	t.Run("tracks requeues per item", func(t *testing.T) {
+		q := NewCollapsingQueue[string]()
+		defer q.ShutDown()
+		q.AddRateLimited("item1")
+		q.AddRateLimited("item2")
+		q.AddRateLimited("item1")
+		assert.Equal(t, 2, q.NumRequeues("item1"))
+		assert.Equal(t, 1, q.NumRequeues("item2"))
+	})
+}
