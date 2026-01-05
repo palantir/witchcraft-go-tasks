@@ -38,8 +38,7 @@ func (t testItem) String() string {
 }
 
 func TestNewDefaultItemSubmitter(t *testing.T) {
-	ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
-	defer cancel()
+	ctx := testcontext.GetTestContext(t)
 	healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
 	consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
 		return nil
@@ -51,8 +50,7 @@ func TestNewDefaultItemSubmitter(t *testing.T) {
 
 func TestItemSubmitter_Submit(t *testing.T) {
 	t.Run("processes submitted item", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
-		defer cancel()
+		ctx := testcontext.GetTestContext(t)
 		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
 		var processed atomic.Value
 		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
@@ -68,8 +66,7 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		}, time.Second, 10*time.Millisecond)
 	})
 	t.Run("requeues item on failure", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
-		defer cancel()
+		ctx := testcontext.GetTestContext(t)
 		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
 		var attempts atomic.Int32
 		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
@@ -86,8 +83,7 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		}, 5*time.Second, 10*time.Millisecond)
 	})
 	t.Run("stops requeuing after max requeues", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
-		defer cancel()
+		ctx := testcontext.GetTestContext(t)
 		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
 		var attempts atomic.Int32
 		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
@@ -108,8 +104,7 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		assert.Equal(t, attemptsAfterMax, attempts.Load(), "should not process after max requeues")
 	})
 	t.Run("submits health check on success", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
-		defer cancel()
+		ctx := testcontext.GetTestContext(t)
 		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
 		var processed atomic.Bool
 		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
@@ -129,8 +124,7 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		}, time.Second, 10*time.Millisecond)
 	})
 	t.Run("submits health check on failure", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
-		defer cancel()
+		ctx := testcontext.GetTestContext(t)
 		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
 		var processed atomic.Bool
 		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
@@ -153,8 +147,7 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		}, time.Second, 10*time.Millisecond)
 	})
 	t.Run("calls custom error logger", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
-		defer cancel()
+		ctx := testcontext.GetTestContext(t)
 		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
 		expectedErr := errors.New("custom error")
 		var loggedErr atomic.Value
@@ -175,8 +168,7 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		}, time.Second, 10*time.Millisecond)
 	})
 	t.Run("collapses duplicate submissions", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
-		defer cancel()
+		ctx := testcontext.GetTestContext(t)
 		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
 		var processCount atomic.Int32
 		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
@@ -194,8 +186,7 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		assert.Less(t, processCount.Load(), int32(10), "duplicates should be collapsed")
 	})
 	t.Run("handles concurrent submissions from multiple goroutines", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
-		defer cancel()
+		ctx := testcontext.GetTestContext(t)
 		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
 		var processedItems sync.Map
 		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
