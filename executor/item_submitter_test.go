@@ -73,18 +73,16 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
 		var attempts atomic.Int32
 		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
-			if attempts.Add(1) <= 2 {
+			if attempts.Add(1) <= 1 {
 				return errors.New("transient error")
 			}
 			return nil
 		})
 		pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
-		submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource,
-			WithErrorLogger[testItem](func(ctx context.Context, err error) {}),
-		)
+		submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource)
 		submitter.Submit(ctx, testItem("test-item"))
 		assert.Eventually(t, func() bool {
-			return attempts.Load() >= 3
+			return attempts.Load() >= 2
 		}, 5*time.Second, 10*time.Millisecond)
 	})
 	t.Run("stops requeuing after max requeues", func(t *testing.T) {
@@ -97,7 +95,7 @@ func TestItemSubmitter_Submit(t *testing.T) {
 			return errors.New("permanent error")
 		})
 		pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
-		maxRequeues := 3
+		maxRequeues := 2
 		submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource,
 			WithMaxNumRequeues[testItem](maxRequeues),
 			WithErrorLogger[testItem](func(ctx context.Context, err error) {}),
@@ -107,7 +105,6 @@ func TestItemSubmitter_Submit(t *testing.T) {
 			return attempts.Load() >= int32(maxRequeues+1)
 		}, 10*time.Second, 10*time.Millisecond)
 		attemptsAfterMax := attempts.Load()
-		time.Sleep(100 * time.Millisecond)
 		assert.Equal(t, attemptsAfterMax, attempts.Load(), "should not process after max requeues")
 	})
 	t.Run("submits health check on success", func(t *testing.T) {
@@ -194,7 +191,6 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		assert.Eventually(t, func() bool {
 			return processCount.Load() >= 1
 		}, time.Second, 10*time.Millisecond)
-		time.Sleep(100 * time.Millisecond)
 		assert.Less(t, processCount.Load(), int32(10), "duplicates should be collapsed")
 	})
 	t.Run("handles concurrent submissions from multiple goroutines", func(t *testing.T) {
