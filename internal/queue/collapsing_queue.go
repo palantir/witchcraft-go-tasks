@@ -43,9 +43,9 @@ type CollapsingQueue[T comparable] interface {
 	// an appropriate delay. The delay increases with each requeue of the same item.
 	// Use this when re-adding items that failed processing to implement backoff.
 	AddRateLimited(item T)
-	// Forget resets the rate limiter's failure count for an item. Call this after
+	// ResetRateLimit resets the rate limiter's failure count for an item. Call this after
 	// successful processing to clear the backoff state.
-	Forget(item T)
+	ResetRateLimit(item T)
 	// NumRequeues returns the number of times an item has been requeued via
 	// AddRateLimited. Returns 0 if the item has never been requeued or was forgotten.
 	NumRequeues(item T) int
@@ -109,8 +109,8 @@ func (q *collapsingQueue[T]) AddRateLimited(item T) {
 	})
 }
 
-func (q *collapsingQueue[T]) Forget(item T) {
-	q.rateLimiter.Forget(item)
+func (q *collapsingQueue[T]) ResetRateLimit(item T) {
+	q.rateLimiter.ResetRateLimit(item)
 }
 
 func (q *collapsingQueue[T]) NumRequeues(item T) int {

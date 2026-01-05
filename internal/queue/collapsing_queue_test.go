@@ -402,20 +402,20 @@ func TestCollapsingQueue_AddRateLimited(t *testing.T) {
 	})
 }
 
-func TestCollapsingQueue_Forget(t *testing.T) {
+func TestCollapsingQueue_ResetRateLimit(t *testing.T) {
 	t.Run("resets requeue count", func(t *testing.T) {
 		q := NewCollapsingQueue[string]()
 		defer q.ShutDown()
 		q.AddRateLimited("item1")
 		q.AddRateLimited("item1")
 		assert.Equal(t, 2, q.NumRequeues("item1"))
-		q.Forget("item1")
+		q.ResetRateLimit("item1")
 		assert.Equal(t, 0, q.NumRequeues("item1"))
 	})
 	t.Run("forget unknown item is no-op", func(t *testing.T) {
 		q := NewCollapsingQueue[string]()
 		defer q.ShutDown()
-		q.Forget("unknown")
+		q.ResetRateLimit("unknown")
 		assert.Equal(t, 0, q.NumRequeues("unknown"))
 	})
 }
@@ -473,7 +473,7 @@ func TestCollapsingQueue_ConcurrentForgetAndAddRateLimited(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < numIterations; i++ {
-			q.Forget(1)
+			q.ResetRateLimit(1)
 		}
 	}()
 	wg.Wait()

@@ -50,9 +50,9 @@ type ItemSubmitter[T constraint] interface {
 	Submit(context.Context, T)
 }
 type defaultItemSubmitter[T constraint] struct {
-	consumerWorkerPool             workerpool.ConsumerWorkerPool[T]
-	k8sKeyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
-	queue                          queue.CollapsingQueue[T]
+	consumerWorkerPool          workerpool.ConsumerWorkerPool[T]
+	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
+	queue                       queue.CollapsingQueue[T]
 
 	logError       func(ctx context.Context, err error)
 	maxNumRequeues int
@@ -63,12 +63,12 @@ type defaultItemSubmitter[T constraint] struct {
 func NewDefaultItemSubmitter[T constraint](
 	ctx context.Context,
 	consumerWorkerPool workerpool.ConsumerWorkerPool[T],
-	k8sKeyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource,
+	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource,
 	options ...ItemSubmitterOption[T]) ItemSubmitter[T] {
 	defaultItemSubmitterArg := &defaultItemSubmitter[T]{
-		consumerWorkerPool:             consumerWorkerPool,
-		k8sKeyedErrorHealthCheckSource: k8sKeyedErrorHealthCheckSource,
-		queue:                          queue.NewCollapsingQueue[T](),
+		consumerWorkerPool:          consumerWorkerPool,
+		keyedErrorHealthCheckSource: keyedErrorHealthCheckSource,
+		queue:                       queue.NewCollapsingQueue[T](),
 		logError: func(ctx context.Context, err error) {
 			svc1log.FromContext(ctx).Error("error occurred processing element in workerpool", svc1log.Stacktrace(err))
 		},
@@ -104,13 +104,13 @@ func (d defaultItemSubmitter[T]) singleProcessAttempt(ctx context.Context, eleme
 	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("queueElementIdentifier", element.String()))
 	d.consumerWorkerPool.SubmitWithCallback(ctx, element, func(ctx context.Context, elem T, err error) {
 		metrics.FromContext(ctx).Timer("com.palantir.witchcraft.process_element_duration").UpdateSince(startTime)
-		d.k8sKeyedErrorHealthCheckSource.Submit(ctx, elem.String(), err)
+		d.keyedErrorHealthCheckSource.Submit(ctx, elem.String(), err)
 		d.queue.Done(element)
 		if err != nil {
 			d.handleProcessError(ctx, element, err)
 			return
 		}
-		d.queue.Forget(element)
+		d.queue.ResetRateLimit(element)
 	})
 }
 
@@ -118,8 +118,8 @@ func (d defaultItemSubmitter[T]) handleProcessError(ctx context.Context, element
 	numRequeues := d.queue.NumRequeues(element)
 	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("maxNumRequeues", d.maxNumRequeues), svc1log.SafeParam("numRequeues", numRequeues))
 	d.logError(ctx, err)
-	if numRequeues == d.maxNumRequeues {
-		d.queue.Forget(element)
+	if numRequeues >= d.maxNumRequeues {
+		d.queue.ResetRateLimit(element)
 	} else {
 		d.queue.AddRateLimited(element)
 	}

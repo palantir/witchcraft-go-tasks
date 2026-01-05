@@ -20,13 +20,15 @@ import (
 	"time"
 )
 
+// RateLimiter will keep track and calculate if items should be rate limited on submission
 type RateLimiter[T comparable] interface {
 	// When gets an item and gets to decide how long that item should wait
+	// Should also keep track on the amount of times an item has been called without ResetRateLimit being invoked
 	When(item T) time.Duration
-	// Forget indicates that an item is finished being retried.  Doesn't matter whether it's for failing
+	// ResetRateLimit indicates that an item is finished being retried.  Doesn't matter whether it's for failing
 	// or for success, we'll stop tracking it
-	Forget(item T)
-	// NumRequeues returns back how many failures the item has had
+	ResetRateLimit(item T)
+	// NumRequeues returns back how many submissions the item has had without ResetRateLimit being called
 	NumRequeues(item T) int
 }
 
@@ -38,7 +40,7 @@ func NewItemExponentialFailureRateLimiter[T comparable](baseDelay time.Duration,
 	}
 }
 
-// TypedItemExponentialFailureRateLimiter does a simple baseDelay*2^<num-failures> limit
+// ItemExponentialFailureRateLimiter does a simple baseDelay*2^<num-failures> limit
 // dealing with max failures and expiration are up to the caller
 type ItemExponentialFailureRateLimiter[T comparable] struct {
 	failuresLock sync.Mutex
@@ -71,7 +73,7 @@ func (r *ItemExponentialFailureRateLimiter[T]) NumRequeues(item T) int {
 	return r.failures[item]
 }
 
-func (r *ItemExponentialFailureRateLimiter[T]) Forget(item T) {
+func (r *ItemExponentialFailureRateLimiter[T]) ResetRateLimit(item T) {
 	r.failuresLock.Lock()
 	defer r.failuresLock.Unlock()
 	delete(r.failures, item)
