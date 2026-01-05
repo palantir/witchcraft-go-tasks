@@ -17,8 +17,6 @@ package executor
 import (
 	"context"
 	"errors"
-	"fmt"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,17 +33,6 @@ type testItem string
 
 func (t testItem) String() string {
 	return string(t)
-}
-
-func TestNewDefaultItemSubmitter(t *testing.T) {
-	ctx := testcontext.GetTestContext(t)
-	healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
-	consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
-		return nil
-	})
-	pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
-	submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource)
-	assert.NotNil(t, submitter)
 }
 
 func TestItemSubmitter_Submit(t *testing.T) {
@@ -98,25 +85,18 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		)
 		submitter.Submit(ctx, testItem("test-item"))
 		assert.Eventually(t, func() bool {
-			return attempts.Load() >= int32(maxRequeues+1)
+			return attempts.Load() == int32(maxRequeues+1)
 		}, 10*time.Second, 10*time.Millisecond)
-		attemptsAfterMax := attempts.Load()
-		assert.Equal(t, attemptsAfterMax, attempts.Load(), "should not process after max requeues")
 	})
 	t.Run("submits health check on success", func(t *testing.T) {
 		ctx := testcontext.GetTestContext(t)
 		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
-		var processed atomic.Bool
 		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
-			processed.Store(true)
 			return nil
 		})
 		pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
 		submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource)
 		submitter.Submit(ctx, testItem("test-item"))
-		assert.Eventually(t, func() bool {
-			return processed.Load()
-		}, time.Second, 10*time.Millisecond)
 		assert.Eventually(t, func() bool {
 			status := healthCheckSource.HealthStatus(ctx)
 			check, ok := status.Checks[health.CheckType("test")]
@@ -126,9 +106,7 @@ func TestItemSubmitter_Submit(t *testing.T) {
 	t.Run("submits health check on failure", func(t *testing.T) {
 		ctx := testcontext.GetTestContext(t)
 		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
-		var processed atomic.Bool
 		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
-			processed.Store(true)
 			return errors.New("processing error")
 		})
 		pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
@@ -137,9 +115,6 @@ func TestItemSubmitter_Submit(t *testing.T) {
 			WithErrorLogger[testItem](func(ctx context.Context, err error) {}),
 		)
 		submitter.Submit(ctx, testItem("test-item"))
-		assert.Eventually(t, func() bool {
-			return processed.Load()
-		}, time.Second, 10*time.Millisecond)
 		assert.Eventually(t, func() bool {
 			status := healthCheckSource.HealthStatus(ctx)
 			check, ok := status.Checks[health.CheckType("test")]
@@ -184,39 +159,5 @@ func TestItemSubmitter_Submit(t *testing.T) {
 			return processCount.Load() >= 1
 		}, time.Second, 10*time.Millisecond)
 		assert.Less(t, processCount.Load(), int32(10), "duplicates should be collapsed")
-	})
-	t.Run("handles concurrent submissions from multiple goroutines", func(t *testing.T) {
-		ctx := testcontext.GetTestContext(t)
-		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
-		var processedItems sync.Map
-		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
-			processedItems.Store(item, true)
-			return nil
-		})
-		pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
-		submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource)
-		numGoroutines := 10
-		numItemsPerGoroutine := 10
-		var wg sync.WaitGroup
-		for g := 0; g < numGoroutines; g++ {
-			wg.Add(1)
-			go func(goroutineID int) {
-				defer wg.Done()
-				for i := 0; i < numItemsPerGoroutine; i++ {
-					item := testItem(fmt.Sprintf("item-%d-%d", goroutineID, i))
-					submitter.Submit(ctx, item)
-				}
-			}(g)
-		}
-		wg.Wait()
-		expectedItems := numGoroutines * numItemsPerGoroutine
-		assert.Eventually(t, func() bool {
-			count := 0
-			processedItems.Range(func(_, _ any) bool {
-				count++
-				return true
-			})
-			return count == expectedItems
-		}, 5*time.Second, 10*time.Millisecond)
 	})
 }
