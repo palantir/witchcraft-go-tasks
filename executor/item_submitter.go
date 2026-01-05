@@ -1,0 +1,126 @@
+// Copyright (c) 2025 Palantir Technologies. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package executor
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/palantir/pkg/metrics"
+	"github.com/palantir/witchcraft-go-health/v2/sources/window"
+	"github.com/palantir/witchcraft-go-logging/wlog/svclog/svc1log"
+	"github.com/palantir/witchcraft-go-tasks/internal/queue"
+	"github.com/palantir/witchcraft-go-tasks/workerpool"
+	"github.com/palantir/witchcraft-go-tracing/wtracing"
+)
+
+type constraint interface {
+	comparable
+	fmt.Stringer
+}
+
+// ItemSubmitter provides a fire-and-forget interface for submitting items to be processed
+// asynchronously with automatic retry, deduplication, and health reporting.
+//
+// Items are placed in a collapsing queue that deduplicates entries - if the same item is
+// submitted multiple times while queued or being processed, duplicates are collapsed. A
+// background goroutine pulls items and delegates processing to a ConsumerWorkerPool.
+//
+// On failure, items are requeued with exponential backoff (500ms base, 10s max) up to
+// maxNumRequeues times (default 5). Processing results are reported to a
+// KeyedErrorHealthCheckSource using each item's String() value as the key.
+//
+// Items must implement comparable (for deduplication) and fmt.Stringer (for health keys).
+type ItemSubmitter[T constraint] interface {
+	// Submit adds an item to the queue for eventual processing. Returns immediately;
+	// processing happens asynchronously. Duplicate submissions are collapsed.
+	Submit(context.Context, T)
+}
+type defaultItemSubmitter[T constraint] struct {
+	consumerWorkerPool          workerpool.ConsumerWorkerPool[T]
+	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
+	queue                       queue.CollapsingQueue[T]
+
+	logError       func(ctx context.Context, err error)
+	maxNumRequeues int
+}
+
+// NewDefaultItemSubmitter creates a new ItemSubmitter and starts its background processing
+// goroutine. The goroutine runs until ctx is cancelled.
+func NewDefaultItemSubmitter[T constraint](
+	ctx context.Context,
+	consumerWorkerPool workerpool.ConsumerWorkerPool[T],
+	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource,
+	options ...ItemSubmitterOption[T]) ItemSubmitter[T] {
+	defaultItemSubmitterArg := &defaultItemSubmitter[T]{
+		consumerWorkerPool:          consumerWorkerPool,
+		keyedErrorHealthCheckSource: keyedErrorHealthCheckSource,
+		queue:                       queue.NewCollapsingQueue[T](),
+		logError: func(ctx context.Context, err error) {
+			svc1log.FromContext(ctx).Error("error occurred processing element in workerpool", svc1log.Stacktrace(err))
+		},
+		maxNumRequeues: 5,
+	}
+	for _, option := range options {
+		option.apply(defaultItemSubmitterArg)
+	}
+	go defaultItemSubmitterArg.startPullingFromQueue(ctx)
+	return defaultItemSubmitterArg
+}
+
+func (d defaultItemSubmitter[T]) Submit(ctx context.Context, element T) {
+	d.queue.Add(element)
+}
+
+func (d defaultItemSubmitter[T]) startPullingFromQueue(ctx context.Context) {
+	for {
+		element, shutdown := d.queue.Get()
+		if shutdown {
+			svc1log.FromContext(ctx).Warn("Queue shutting down; workers stopping.")
+			return
+		}
+		d.singleProcessAttempt(ctx, element)
+		metrics.FromContext(ctx).Gauge("com.palantir.witchcraft.queue_length").Update(int64(d.queue.Len()))
+	}
+}
+
+func (d defaultItemSubmitter[T]) singleProcessAttempt(ctx context.Context, element T) {
+	startTime := time.Now()
+	span, ctx := wtracing.StartSpanFromTracerInContext(ctx, "defaultItemSubmitter.runSingleJob")
+	defer span.Finish()
+	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("queueElementIdentifier", element.String()))
+	d.consumerWorkerPool.SubmitWithCallback(ctx, element, func(ctx context.Context, elem T, err error) {
+		metrics.FromContext(ctx).Timer("com.palantir.witchcraft.process_element_duration").UpdateSince(startTime)
+		d.keyedErrorHealthCheckSource.Submit(ctx, elem.String(), err)
+		d.queue.Done(element)
+		if err != nil {
+			d.handleProcessError(ctx, element, err)
+			return
+		}
+		d.queue.ResetRateLimit(element)
+	})
+}
+
+func (d defaultItemSubmitter[T]) handleProcessError(ctx context.Context, element T, err error) {
+	numRequeues := d.queue.NumRequeues(element)
+	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("maxNumRequeues", d.maxNumRequeues), svc1log.SafeParam("numRequeues", numRequeues))
+	d.logError(ctx, err)
+	if numRequeues >= d.maxNumRequeues {
+		d.queue.ResetRateLimit(element)
+	} else {
+		d.queue.AddRateLimited(element)
+	}
+}
