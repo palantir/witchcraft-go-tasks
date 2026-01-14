@@ -18,6 +18,7 @@ import (
 	"context"
 	"testing"
 
+	werror "github.com/palantir/witchcraft-go-error"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -35,4 +36,20 @@ func Test_Runnable(t *testing.T) {
 		return 1, nil
 	}))
 	assert.NoError(t, myRun.Run(context.Background()))
+}
+
+func Test_NewNamedRunnable(t *testing.T) {
+	called := false
+	myRun := NewRunnableFromFunc(func(ctx context.Context) error {
+		if called {
+			return werror.Error("err")
+		}
+		called = true
+		return nil
+	})
+	namedRunnable := NewNamedRunnable("name", myRun)
+	assert.Equal(t, namedRunnable.Name(), "name")
+	assert.NoError(t, namedRunnable.Run(context.Background()))
+	assert.True(t, called)
+	assert.Error(t, namedRunnable.Run(context.Background()))
 }
