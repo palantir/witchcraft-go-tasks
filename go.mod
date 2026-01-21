@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/palantir/pkg/metrics v1.9.0
 	github.com/palantir/witchcraft-go-error v1.42.0
-	github.com/palantir/witchcraft-go-health/v2 v2.1.0
+	github.com/palantir/witchcraft-go-health/v2 v2.2.0
 	github.com/palantir/witchcraft-go-logging v1.64.0
 	github.com/palantir/witchcraft-go-tracing v1.41.0
 	github.com/stretchr/testify v1.11.1
