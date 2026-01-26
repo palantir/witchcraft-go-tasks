@@ -1,98 +1,85 @@
+// Copyright (c) 2026 Palantir Technologies. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package executor
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 
 	werror "github.com/palantir/witchcraft-go-error"
+	"github.com/palantir/witchcraft-go-tasks/function"
+	"github.com/palantir/witchcraft-go-tasks/workerpool"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	workerpool_mock "github.palantir.build/deployability/generics-pkg/internal/generated/mocks/github.palantir.build/deployability/generics-pkg/workerpool"
-	internal_mock "github.palantir.build/deployability/generics-pkg/internal/generated/mocks/github.palantir.build/deployability/generics-pkg/workerpool/internal_"
-	"github.palantir.build/deployability/generics-pkg/util/functional"
-	"github.palantir.build/deployability/generics-pkg/workerpool"
 )
 
-func Test_ExecuteRunnables(t *testing.T) {
-	f1 := new(internal_mock.ComputingFuture[struct{}])
-	f2 := new(internal_mock.ComputingFuture[struct{}])
-	voidWorkerPool := new(workerpool_mock.VoidWorkerPool)
+func TestExecuteRunnables(t *testing.T) {
+	voidWorkerPool := workerpool.NewDefaultRunnableWorkerPool(context.Background())
 	runnableExecutor := NewDefaultRunnableExecutor(voidWorkerPool)
-	r1 := functional.NewRunnableFromFunc(func(ctx context.Context) error {
+	var r1Called atomic.Bool
+	var r2Called atomic.Bool
+	r1 := function.NewRunnableFromFunc(func(ctx context.Context) error {
+		r1Called.Store(true)
 		return nil
 	})
-	r2 := functional.NewRunnableFromFunc(func(ctx context.Context) error {
+	r2 := function.NewRunnableFromFunc(func(ctx context.Context) error {
+		r2Called.Store(true)
 		return nil
 	})
-	voidWorkerPool.On("Submit", mock.Anything, mock.AnythingOfType("functional.RunnableFunc")).Return(f1).Times(1)
-	voidWorkerPool.On("Submit", mock.Anything, mock.AnythingOfType("functional.RunnableFunc")).Return(f2).Times(1)
-	f1.On("Get", mock.Anything).Return(struct{}{}, nil)
-	f2.On("Get", mock.Anything).Return(struct{}{}, nil)
-	errs := runnableExecutor.ExecuteRunnables(context.Background(), []functional.Runnable{r1, r2})
+	errs := runnableExecutor.ExecuteRunnables(context.Background(), []function.Runnable{r1, r2})
 	assert.Empty(t, errs)
+	assert.True(t, r1Called.Load())
+	assert.True(t, r2Called.Load())
 }
 
-func Test_ExecuteRunnables_WithError(t *testing.T) {
-	f1 := new(internal_mock.ComputingFuture[struct{}])
-	f2 := new(internal_mock.ComputingFuture[struct{}])
-	voidWorkerPool := new(workerpool_mock.VoidWorkerPool)
+func TestExecuteRunnables_WithError(t *testing.T) {
+	voidWorkerPool := workerpool.NewDefaultRunnableWorkerPool(context.Background())
 	runnableExecutor := NewDefaultRunnableExecutor(voidWorkerPool)
-	r1 := functional.NewRunnableFromFunc(func(ctx context.Context) error {
+	var r1Called atomic.Bool
+	r1 := function.NewRunnableFromFunc(func(ctx context.Context) error {
+		r1Called.Store(true)
 		return nil
 	})
-	r2 := functional.NewRunnableFromFunc(func(ctx context.Context) error {
-		return nil
+	r2 := function.NewRunnableFromFunc(func(ctx context.Context) error {
+		return werror.Error("err here")
 	})
-	voidWorkerPool.On("Submit", mock.Anything, mock.AnythingOfType("functional.RunnableFunc")).Return(f1).Times(1)
-	voidWorkerPool.On("Submit", mock.Anything, mock.AnythingOfType("functional.RunnableFunc")).Return(f2).Times(1)
-	f1.On("Get", mock.Anything).Return(struct{}{}, nil)
-	f2.On("Get", mock.Anything).Return(struct{}{}, werror.Error("err here"))
-	errs := runnableExecutor.ExecuteRunnables(context.Background(), []functional.Runnable{r1, r2})
+	errs := runnableExecutor.ExecuteRunnables(context.Background(), []function.Runnable{r1, r2})
 	assert.Equal(t, 1, len(errs))
 	assert.EqualError(t, errs[0], "err here")
+	assert.True(t, r1Called.Load())
 }
 
-func Test_ExecuteRunnablesNoMocks(t *testing.T) {
-	voidWorkerPool := workerpool.NewDefaultVoidWorkerPool(context.Background())
+func TestExecuteRunnable(t *testing.T) {
+	voidWorkerPool := workerpool.NewDefaultRunnableWorkerPool(context.Background())
 	runnableExecutor := NewDefaultRunnableExecutor(voidWorkerPool)
-	r1Called := false
-	r1 := functional.NewRunnableFromFunc(func(ctx context.Context) error {
-		r1Called = true
+	var r1Called atomic.Bool
+	r1 := function.NewRunnableFromFunc(func(ctx context.Context) error {
+		r1Called.Store(true)
 		return nil
 	})
-	r2Called := false
-	r2 := functional.NewRunnableFromFunc(func(ctx context.Context) error {
-		r2Called = true
-		return nil
-	})
-	errs := runnableExecutor.ExecuteRunnables(context.Background(), []functional.Runnable{r1, r2})
-	assert.Empty(t, errs)
-	assert.True(t, r1Called)
-	assert.True(t, r2Called)
-}
-
-func Test_ExecuteRunnable(t *testing.T) {
-	f1 := new(internal_mock.ComputingFuture[struct{}])
-	voidWorkerPool := new(workerpool_mock.VoidWorkerPool)
-	runnableExecutor := NewDefaultRunnableExecutor(voidWorkerPool)
-	r1 := functional.NewRunnableFromFunc(func(ctx context.Context) error {
-		return nil
-	})
-	voidWorkerPool.On("Submit", mock.Anything, mock.AnythingOfType("functional.RunnableFunc")).Return(f1).Times(1)
-	f1.On("Get", mock.Anything).Return(struct{}{}, nil)
 	err := runnableExecutor.ExecuteRunnable(context.Background(), r1)
 	assert.NoError(t, err)
+	assert.True(t, r1Called.Load())
 }
 
-func Test_ExecuteRunnableErrors(t *testing.T) {
-	f2 := new(internal_mock.ComputingFuture[struct{}])
-	voidWorkerPool := new(workerpool_mock.VoidWorkerPool)
+func TestExecuteRunnable_WithError(t *testing.T) {
+	voidWorkerPool := workerpool.NewDefaultRunnableWorkerPool(context.Background())
 	runnableExecutor := NewDefaultRunnableExecutor(voidWorkerPool)
-	r2 := functional.NewRunnableFromFunc(func(ctx context.Context) error {
-		return nil
+	r1 := function.NewRunnableFromFunc(func(ctx context.Context) error {
+		return werror.Error("err here")
 	})
-	voidWorkerPool.On("Submit", mock.Anything, mock.AnythingOfType("functional.RunnableFunc")).Return(f2).Times(1)
-	f2.On("Get", mock.Anything).Return(struct{}{}, werror.Error("err here"))
-	err := runnableExecutor.ExecuteRunnable(context.Background(), r2)
+	err := runnableExecutor.ExecuteRunnable(context.Background(), r1)
 	assert.EqualError(t, err, "err here")
 }
