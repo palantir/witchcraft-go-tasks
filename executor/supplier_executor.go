@@ -22,19 +22,37 @@ import (
 	"github.com/palantir/witchcraft-go-tasks/workerpool"
 )
 
-// SupplierExecutor is a type of executor that takes in functional.Supplier as arguments and returns the values those suppliers supply
+// SupplierExecutor provides a high-level interface for executing multiple Supplier tasks in parallel
+// and collecting their results.
+//
+// The executor submits all suppliers to an underlying worker pool, allowing them to execute concurrently.
+// The degree of parallelism is controlled by the workerpool.SupplierWorkerPool provided at construction time.
+// All suppliers are guaranteed to complete (or fail) before the resolve methods return.
+//
+// This is useful when you need to fetch or compute multiple values in parallel and aggregate the results.
+// Two resolution strategies are provided: one that collects all results regardless of errors (ResolveAll),
+// and one that fails fast on the first error (ResolveUntilError).
 type SupplierExecutor[T any] interface {
-	// ResolveAll runs all functions that are submitted and ran
-	// Each result is inspected and they are split between success results and failures, both are returned
+	// ResolveAll submits all provided suppliers to the worker pool for parallel execution.
+	// It blocks until all suppliers have completed and returns two slices:
+	//   - A slice of successful results (values from suppliers that did not error)
+	//   - A slice of errors (from suppliers that failed)
+	// The successful results maintain their relative order from the input slice.
+	// Use this method when you want to collect as many results as possible, even if some suppliers fail.
 	ResolveAll(ctx context.Context, suppliers []function.Supplier[T]) ([]T, []error)
-	// ResolveUntilError runs all functions that are submitted  and ran
-	// Each result is inspected and success are kept. If all suppliers result in a success, the entire slice is returned as well as a nil error
-	// If any supplier errors, the first error is returned and no results are returned
+	// ResolveUntilError submits all provided suppliers to the worker pool for parallel execution.
+	// It blocks until all suppliers have completed, then inspects results in order.
+	// If all suppliers succeed, returns a slice of all results and a nil error.
+	// If any supplier fails, returns nil and the first error encountered (in input order).
+	// Note: All suppliers will execute regardless of errors; "until error" refers to result collection,
+	// not execution. Use this method when partial results are not useful and you need all-or-nothing semantics.
 	ResolveUntilError(ctx context.Context, suppliers []function.Supplier[T]) ([]T, error)
 }
 
-// NewDefaultSupplierExecutor returns the default implemntation of SupplierExecutor
-// In this implementation, the throughput is bound by the given workerPool
+// NewDefaultSupplierExecutor creates a new SupplierExecutor that uses the provided worker pool
+// for task execution. The worker pool controls the maximum concurrency of supplier execution.
+// For unbounded parallelism, use workerpool.NewDefaultSupplierWorkerPool[T](ctx).
+// For bounded parallelism, use workerpool.NewDefaultSupplierWorkerPool[T](ctx, workerpool.WithMaxNumberOfWorkers(n)).
 func NewDefaultSupplierExecutor[T any](workerPool workerpool.SupplierWorkerPool[T]) SupplierExecutor[T] {
 	return &defaultSupplierExecutor[T]{
 		workerPool: workerPool,

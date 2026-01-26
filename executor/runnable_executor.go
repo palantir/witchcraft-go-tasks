@@ -22,11 +22,23 @@ import (
 	"github.com/palantir/witchcraft-go-tasks/workerpool"
 )
 
-// RunnableExecutor is an interface that allows a user to submit a slice of runnables
-// This parallelism of the executor is controlled by the workerpool.VoidWorkerPool given at construction time
-// All runnable will be ran before returning, a list of errors will be returned if any errors are non-nil
+// RunnableExecutor provides a high-level interface for executing multiple Runnable tasks in parallel.
+//
+// The executor submits all runnables to an underlying worker pool, allowing them to execute concurrently.
+// The degree of parallelism is controlled by the workerpool.RunnableWorkerPool provided at construction time.
+// All runnables are guaranteed to complete (or fail) before the execute methods return.
+//
+// This is useful for fire-and-forget style operations where you need to run multiple independent tasks
+// and only care about whether they succeeded or failed, not about return values.
 type RunnableExecutor interface {
+	// ExecuteRunnables submits all provided runnables to the worker pool for parallel execution.
+	// It blocks until all runnables have completed and returns a slice of all errors encountered.
+	// The returned error slice maintains the order of errors as they were collected (not necessarily
+	// the order of the input runnables). If all runnables succeed, an empty slice is returned.
 	ExecuteRunnables(ctx context.Context, runnables []function.Runnable) []error
+	// ExecuteRunnable submits a single runnable to the worker pool for execution.
+	// It blocks until the runnable completes and returns its error (or nil on success).
+	// This is a convenience method equivalent to calling ExecuteRunnables with a single-element slice.
 	ExecuteRunnable(ctx context.Context, runnable function.Runnable) error
 }
 
@@ -34,7 +46,10 @@ type defaultRunnableExecutor struct {
 	voidWorkerPool workerpool.RunnableWorkerPool
 }
 
-// NewDefaultRunnableExecutor returns the default implementation of the RunnableExecutor
+// NewDefaultRunnableExecutor creates a new RunnableExecutor that uses the provided worker pool
+// for task execution. The worker pool controls the maximum concurrency of runnable execution.
+// For unbounded parallelism, use workerpool.NewDefaultRunnableWorkerPool(ctx).
+// For bounded parallelism, use workerpool.NewDefaultRunnableWorkerPool(ctx, workerpool.WithMaxNumberOfWorkers(n)).
 func NewDefaultRunnableExecutor(voidWorkerPool workerpool.RunnableWorkerPool) RunnableExecutor {
 	return &defaultRunnableExecutor{
 		voidWorkerPool: voidWorkerPool,
