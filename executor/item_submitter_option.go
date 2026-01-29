@@ -19,33 +19,32 @@ import (
 )
 
 // ItemSubmitterOption is an option that can be used to configure ItemSubmitters created using the NewDefaultItemSubmitter function.
-type ItemSubmitterOption[T ItemSubmitterConstraint] interface {
-	apply(*defaultItemSubmitter[T])
-}
+type ItemSubmitterOption = func(c *ItemSubmitterConfig) *ItemSubmitterConfig
 
-type itemSubmitterOptionFunc[T ItemSubmitterConstraint] func(*defaultItemSubmitter[T])
-
-//nolint:unused // implements ItemSubmitterOption interface
-func (f itemSubmitterOptionFunc[T]) apply(i *defaultItemSubmitter[T]) {
-	f(i)
+// ItemSubmitterConfig is the configuration for ItemSubmitter. Configured with given options.
+type ItemSubmitterConfig struct {
+	maxNumRequeues int
+	logError       func(ctx context.Context, err error)
 }
 
 // WithMaxNumRequeues sets the maximum number of times an item will be requeued
 // after processing failures before being dropped. Defaults to 5 if not specified.
 // Any value under 1 will cause 0 requeues to occur
-func WithMaxNumRequeues[T ItemSubmitterConstraint](maxNumRequeues int) ItemSubmitterOption[T] {
-	return itemSubmitterOptionFunc[T](func(defaultItemSubmitterArg *defaultItemSubmitter[T]) {
-		defaultItemSubmitterArg.maxNumRequeues = maxNumRequeues
-	})
+func WithMaxNumRequeues(maxNumRequeues int) ItemSubmitterOption {
+	return func(c *ItemSubmitterConfig) *ItemSubmitterConfig {
+		c.maxNumRequeues = maxNumRequeues
+		return c
+	}
 }
 
 // WithErrorLogger sets a custom error logging function called when item processing
 // fails. By default, errors are logged using svc1log at ERROR level with a stacktrace.
-func WithErrorLogger[T ItemSubmitterConstraint](errorLogger func(ctx context.Context, err error)) ItemSubmitterOption[T] {
-	return itemSubmitterOptionFunc[T](func(defaultItemSubmitterArg *defaultItemSubmitter[T]) {
+func WithErrorLogger(errorLogger func(ctx context.Context, err error)) ItemSubmitterOption {
+	return func(c *ItemSubmitterConfig) *ItemSubmitterConfig {
 		if errorLogger == nil {
-			return
+			return c
 		}
-		defaultItemSubmitterArg.logError = errorLogger
-	})
+		c.logError = errorLogger
+		return c
+	}
 }

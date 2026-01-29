@@ -55,9 +55,7 @@ type defaultItemSubmitter[T ItemSubmitterConstraint] struct {
 	consumerWorkerPool          workerpool.ConsumerWorkerPool[T]
 	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
 	queue                       queue.CollapsingQueue[T]
-
-	logError       func(ctx context.Context, err error)
-	maxNumRequeues int
+	config                      ItemSubmitterConfig
 }
 
 // NewDefaultItemSubmitter creates a new ItemSubmitter and starts its background processing
@@ -66,18 +64,21 @@ func NewDefaultItemSubmitter[T ItemSubmitterConstraint](
 	ctx context.Context,
 	consumerWorkerPool workerpool.ConsumerWorkerPool[T],
 	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource,
-	options ...ItemSubmitterOption[T]) ItemSubmitter[T] {
+	options ...ItemSubmitterOption) ItemSubmitter[T] {
+	config := ItemSubmitterConfig{
+		maxNumRequeues: 5,
+		logError: func(ctx context.Context, err error) {
+			svc1log.FromContext(ctx).Error("error occurred processing element in workerpool", svc1log.Stacktrace(err))
+		},
+	}
+	for _, option := range options {
+		option(&config)
+	}
 	defaultItemSubmitterArg := &defaultItemSubmitter[T]{
 		consumerWorkerPool:          consumerWorkerPool,
 		keyedErrorHealthCheckSource: keyedErrorHealthCheckSource,
 		queue:                       queue.NewCollapsingQueue[T](),
-		logError: func(ctx context.Context, err error) {
-			svc1log.FromContext(ctx).Error("error occurred processing element in workerpool", svc1log.Stacktrace(err))
-		},
-		maxNumRequeues: 5,
-	}
-	for _, option := range options {
-		option.apply(defaultItemSubmitterArg)
+		config:                      config,
 	}
 	go defaultItemSubmitterArg.startPullingFromQueue(ctx)
 	return defaultItemSubmitterArg
@@ -118,9 +119,9 @@ func (d defaultItemSubmitter[T]) singleProcessAttempt(ctx context.Context, eleme
 
 func (d defaultItemSubmitter[T]) handleProcessError(ctx context.Context, element T, err error) {
 	numRequeues := d.queue.NumRequeues(element)
-	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("maxNumRequeues", d.maxNumRequeues), svc1log.SafeParam("numRequeues", numRequeues))
-	d.logError(ctx, err)
-	if numRequeues >= d.maxNumRequeues {
+	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("maxNumRequeues", d.config.maxNumRequeues), svc1log.SafeParam("numRequeues", numRequeues))
+	d.config.logError(ctx, err)
+	if numRequeues >= d.config.maxNumRequeues {
 		d.queue.ResetRateLimit(element)
 	} else {
 		d.queue.AddRateLimited(element)
