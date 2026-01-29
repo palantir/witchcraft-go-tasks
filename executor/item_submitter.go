@@ -27,7 +27,9 @@ import (
 	"github.com/palantir/witchcraft-go-tracing/wtracing"
 )
 
-type constraint interface {
+// ItemSubmitterConstraint defines the type requirements for items processed by ItemSubmitter.
+// Items must be comparable (for deduplication) and implement fmt.Stringer (for health keys).
+type ItemSubmitterConstraint interface {
 	comparable
 	fmt.Stringer
 }
@@ -44,12 +46,12 @@ type constraint interface {
 // KeyedErrorHealthCheckSource using each item's String() value as the key.
 //
 // Items must implement comparable (for deduplication) and fmt.Stringer (for health keys).
-type ItemSubmitter[T constraint] interface {
+type ItemSubmitter[T ItemSubmitterConstraint] interface {
 	// Submit adds an item to the queue for eventual processing. Returns immediately;
 	// processing happens asynchronously. Duplicate submissions are collapsed.
 	Submit(context.Context, T)
 }
-type defaultItemSubmitter[T constraint] struct {
+type defaultItemSubmitter[T ItemSubmitterConstraint] struct {
 	consumerWorkerPool          workerpool.ConsumerWorkerPool[T]
 	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
 	queue                       queue.CollapsingQueue[T]
@@ -60,7 +62,7 @@ type defaultItemSubmitter[T constraint] struct {
 
 // NewDefaultItemSubmitter creates a new ItemSubmitter and starts its background processing
 // goroutine. The goroutine runs until ctx is cancelled.
-func NewDefaultItemSubmitter[T constraint](
+func NewDefaultItemSubmitter[T ItemSubmitterConstraint](
 	ctx context.Context,
 	consumerWorkerPool workerpool.ConsumerWorkerPool[T],
 	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource,
