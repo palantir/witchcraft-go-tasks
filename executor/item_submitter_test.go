@@ -80,8 +80,8 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
 		maxRequeues := 2
 		submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource,
-			WithMaxNumRequeues[testItem](maxRequeues),
-			WithErrorLogger[testItem](func(ctx context.Context, err error) {}),
+			WithMaxNumRequeues(maxRequeues),
+			WithErrorLogger(func(ctx context.Context, err error) {}),
 		)
 		submitter.Submit(ctx, testItem("test-item"))
 		assert.Eventually(t, func() bool {
@@ -111,8 +111,8 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		})
 		pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
 		submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource,
-			WithMaxNumRequeues[testItem](0),
-			WithErrorLogger[testItem](func(ctx context.Context, err error) {}),
+			WithMaxNumRequeues(0),
+			WithErrorLogger(func(ctx context.Context, err error) {}),
 		)
 		submitter.Submit(ctx, testItem("test-item"))
 		assert.Eventually(t, func() bool {
@@ -131,8 +131,8 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		})
 		pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
 		submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource,
-			WithMaxNumRequeues[testItem](0),
-			WithErrorLogger[testItem](func(ctx context.Context, err error) {
+			WithMaxNumRequeues(0),
+			WithErrorLogger(func(ctx context.Context, err error) {
 				loggedErr.Store(err)
 			}),
 		)
