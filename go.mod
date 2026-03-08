@@ -9,7 +9,7 @@ require (
 	github.com/palantir/witchcraft-go-logging v1.65.0
 	github.com/palantir/witchcraft-go-tracing v1.41.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sync v0.19.0
+	golang.org/x/sync v0.20.0
 )
 
 require (
