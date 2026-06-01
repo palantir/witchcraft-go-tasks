@@ -2,6 +2,8 @@ module github.com/palantir/witchcraft-go-tasks
 
 go 1.26.0
 
+toolchain go1.26.3
+
 require (
 	github.com/palantir/pkg/metrics v1.10.1
 	github.com/palantir/witchcraft-go-error v1.44.0
