@@ -6,7 +6,7 @@ toolchain go1.26.3
 
 require (
 	github.com/palantir/pkg/metrics v1.10.1
-	github.com/palantir/witchcraft-go-error v1.44.0
+	github.com/palantir/witchcraft-go-error v1.45.0
 	github.com/palantir/witchcraft-go-health/v2 v2.4.0
 	github.com/palantir/witchcraft-go-logging v1.67.0
 	github.com/palantir/witchcraft-go-tracing v1.43.0
