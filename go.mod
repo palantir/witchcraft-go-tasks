@@ -11,7 +11,7 @@ require (
 	github.com/palantir/witchcraft-go-logging v1.69.0
 	github.com/palantir/witchcraft-go-tracing v1.44.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sync v0.21.0
+	golang.org/x/sync v0.22.0
 )
 
 require (
