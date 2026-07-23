@@ -152,7 +152,7 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		})
 		pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
 		submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource)
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			submitter.Submit(ctx, testItem("same-item"))
 		}
 		assert.Eventually(t, func() bool {
