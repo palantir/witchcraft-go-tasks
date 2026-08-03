@@ -1,0 +1,8 @@
+type: feature
+feature:
+  description: |
+    Adds executor.KeyedSupplierExecutor[K, T] and executor.KeyedFunctionExecutor[K, T],
+    the map-shaped siblings of SupplierExecutor[T]. Both fan tasks out over a
+    workerpool.SupplierWorkerPool and collect the results into a map[K]T, preserving
+    per-task keys on the output. KeyedSupplierExecutor.ResolveAll is fail-fast (in
+    contrast to SupplierExecutor.ResolveAll, which collects errors).
