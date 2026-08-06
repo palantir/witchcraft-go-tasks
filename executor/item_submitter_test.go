@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/palantir/pkg/metrics"
 	"github.com/palantir/witchcraft-go-health/v2/conjure/witchcraft/api/health"
 	"github.com/palantir/witchcraft-go-health/v2/sources/window"
 	"github.com/palantir/witchcraft-go-tasks/function"
@@ -33,6 +34,36 @@ type testItem string
 
 func (t testItem) String() string {
 	return string(t)
+}
+
+func metricHasTag(registry metrics.RootRegistry, metricName, tagKey, tagValue string) bool {
+	found := false
+	registry.Each(func(name string, tags metrics.Tags, _ metrics.MetricVal) {
+		if name != metricName {
+			return
+		}
+		for _, tag := range tags {
+			if tag.Key() == tagKey && tag.Value() == tagValue {
+				found = true
+			}
+		}
+	})
+	return found
+}
+
+func metricHasTagKey(registry metrics.RootRegistry, metricName, tagKey string) bool {
+	found := false
+	registry.Each(func(name string, tags metrics.Tags, _ metrics.MetricVal) {
+		if name != metricName {
+			return
+		}
+		for _, tag := range tags {
+			if tag.Key() == tagKey {
+				found = true
+			}
+		}
+	})
+	return found
 }
 
 func TestItemSubmitter_Submit(t *testing.T) {
@@ -159,5 +190,40 @@ func TestItemSubmitter_Submit(t *testing.T) {
 			return processCount.Load() >= 1
 		}, time.Second, 10*time.Millisecond)
 		assert.Less(t, processCount.Load(), int32(10), "duplicates should be collapsed")
+	})
+	t.Run("applies itemsubmittername tag when set", func(t *testing.T) {
+		registry := metrics.NewRootMetricsRegistry()
+		ctx := metrics.WithRegistry(testcontext.GetTestContext(t), registry)
+		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
+		var processed atomic.Bool
+		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
+			processed.Store(true)
+			return nil
+		})
+		pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
+		submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource, WithItemSubmitterName("test-pool"))
+		submitter.Submit(ctx, testItem("test-item"))
+		assert.Eventually(t, func() bool {
+			if !processed.Load() {
+				return false
+			}
+			return metricHasTag(registry, "com.palantir.witchcraft.process_element_duration", "itemsubmittername", "test-pool")
+		}, time.Second, 10*time.Millisecond)
+	})
+	t.Run("does not apply itemsubmittername tag when unset", func(t *testing.T) {
+		registry := metrics.NewRootMetricsRegistry()
+		ctx := metrics.WithRegistry(testcontext.GetTestContext(t), registry)
+		healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
+		var processed atomic.Bool
+		consumer := function.NewConsumerFromFunc(func(ctx context.Context, item testItem) error {
+			processed.Store(true)
+			return nil
+		})
+		pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
+		submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource)
+		submitter.Submit(ctx, testItem("test-item"))
+		assert.Eventually(t, processed.Load, time.Second, 10*time.Millisecond)
+		assert.False(t, metricHasTagKey(registry, "com.palantir.witchcraft.process_element_duration", "itemsubmittername"),
+			"should not have itemsubmittername tag when option is unset")
 	})
 }

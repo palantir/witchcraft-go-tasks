@@ -16,6 +16,8 @@ package executor
 
 import (
 	"context"
+
+	"github.com/palantir/pkg/metrics"
 )
 
 // ItemSubmitterOption is an option that can be used to configure ItemSubmitters created using the NewDefaultItemSubmitter function.
@@ -23,8 +25,10 @@ type ItemSubmitterOption = func(c *ItemSubmitterConfig) *ItemSubmitterConfig
 
 // ItemSubmitterConfig is the configuration for ItemSubmitter. Configured with given options.
 type ItemSubmitterConfig struct {
-	maxNumRequeues int
-	logError       func(ctx context.Context, err error)
+	maxNumRequeues       int
+	logError             func(ctx context.Context, err error)
+	itemSubmitterName    string
+	additionalMetricTags []metrics.Tag
 }
 
 // WithMaxNumRequeues sets the maximum number of times an item will be requeued
@@ -45,6 +49,18 @@ func WithErrorLogger(errorLogger func(ctx context.Context, err error)) ItemSubmi
 			return c
 		}
 		c.logError = errorLogger
+		return c
+	}
+}
+
+// WithItemSubmitterName sets a name for this ItemSubmitter that is applied as an
+// "itemsubmittername" metric tag on the ItemSubmitter's emitted metrics
+// (com.palantir.witchcraft.process_element_duration and com.palantir.witchcraft.queue_length).
+// This is useful when multiple ItemSubmitters run in the same process and you want to
+// distinguish their metrics. If the empty string is provided, no tag is applied.
+func WithItemSubmitterName(name string) ItemSubmitterOption {
+	return func(c *ItemSubmitterConfig) *ItemSubmitterConfig {
+		c.itemSubmitterName = name
 		return c
 	}
 }
