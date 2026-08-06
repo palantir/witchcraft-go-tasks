@@ -110,7 +110,13 @@ func (d defaultItemSubmitter[T]) singleProcessAttempt(ctx context.Context, eleme
 	startTime := time.Now()
 	span, ctx := wtracing.StartSpanFromTracerInContext(ctx, "defaultItemSubmitter.runSingleJob")
 	defer span.Finish()
-	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("queueElementIdentifier", element.String()))
+	params := []svc1log.Param{
+		svc1log.SafeParam("queueElementIdentifier", element.String()),
+	}
+	if d.config.itemSubmitterName != "" {
+		params = append(params, svc1log.SafeParam("itemSubmitterName", d.config.itemSubmitterName))
+	}
+	ctx = svc1log.WithLoggerParams(ctx, params...)
 	d.consumerWorkerPool.SubmitWithCallback(ctx, element, func(ctx context.Context, elem T, err error) {
 		metrics.FromContext(ctx).Timer("com.palantir.witchcraft.process_element_duration", d.config.additionalMetricTags...).UpdateSince(startTime)
 		d.keyedErrorHealthCheckSource.Submit(ctx, elem.String(), err)
