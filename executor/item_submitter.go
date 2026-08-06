@@ -74,6 +74,12 @@ func NewDefaultItemSubmitter[T ItemSubmitterConstraint](
 	for _, option := range options {
 		option(&config)
 	}
+	if config.itemSubmitterName != "" {
+		newTag, err := metrics.NewTag("itemsubmittername", config.itemSubmitterName)
+		if err == nil {
+			config.additionalMetricTags = []metrics.Tag{newTag}
+		}
+	}
 	defaultItemSubmitterArg := &defaultItemSubmitter[T]{
 		consumerWorkerPool:          consumerWorkerPool,
 		keyedErrorHealthCheckSource: keyedErrorHealthCheckSource,
@@ -96,7 +102,7 @@ func (d defaultItemSubmitter[T]) startPullingFromQueue(ctx context.Context) {
 			return
 		}
 		d.singleProcessAttempt(ctx, element)
-		metrics.FromContext(ctx).Gauge("com.palantir.witchcraft.queue_length").Update(int64(d.queue.Len()))
+		metrics.FromContext(ctx).Gauge("com.palantir.witchcraft.queue_length", d.config.additionalMetricTags...).Update(int64(d.queue.Len()))
 	}
 }
 
@@ -106,7 +112,7 @@ func (d defaultItemSubmitter[T]) singleProcessAttempt(ctx context.Context, eleme
 	defer span.Finish()
 	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("queueElementIdentifier", element.String()))
 	d.consumerWorkerPool.SubmitWithCallback(ctx, element, func(ctx context.Context, elem T, err error) {
-		metrics.FromContext(ctx).Timer("com.palantir.witchcraft.process_element_duration").UpdateSince(startTime)
+		metrics.FromContext(ctx).Timer("com.palantir.witchcraft.process_element_duration", d.config.additionalMetricTags...).UpdateSince(startTime)
 		d.keyedErrorHealthCheckSource.Submit(ctx, elem.String(), err)
 		d.queue.Done(element)
 		if err != nil {
