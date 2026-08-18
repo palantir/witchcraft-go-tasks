@@ -1,6 +1,3 @@
-# github.com/davecgh/go-spew v1.1.1
-## explicit
-github.com/davecgh/go-spew/spew
 # github.com/openzipkin/zipkin-go v0.4.3
 ## explicit; go 1.20
 github.com/openzipkin/zipkin-go
@@ -43,7 +40,7 @@ github.com/palantir/pkg/uuid/internal/uuid
 ## explicit; go 1.26.0
 github.com/palantir/witchcraft-go-error
 github.com/palantir/witchcraft-go-error/internal/errors
-# github.com/palantir/witchcraft-go-health/v2 v2.9.0
+# github.com/palantir/witchcraft-go-health/v2 v2.10.0
 ## explicit; go 1.26.0
 github.com/palantir/witchcraft-go-health/v2/conjure/witchcraft/api/health
 github.com/palantir/witchcraft-go-health/v2/sources
@@ -74,13 +71,12 @@ github.com/palantir/witchcraft-go-tracing/wzipkin
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/pmezard/go-difflib v1.0.0
-## explicit
-github.com/pmezard/go-difflib/difflib
-# github.com/stretchr/testify v1.11.1
+# github.com/stretchr/testify v1.12.0
 ## explicit; go 1.17
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/assert/yaml
+github.com/stretchr/testify/internal/difflib
+github.com/stretchr/testify/internal/spew
 github.com/stretchr/testify/require
 # go.uber.org/multierr v1.11.0
 ## explicit; go 1.19
