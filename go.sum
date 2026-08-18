@@ -1,5 +1,3 @@
-github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
-github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/mattn/go-colorable v0.1.15 h1:+u9SLTRGnXv73cEsnsmoZBom+dMU88B2M0aDcWy0/jY=
 github.com/mattn/go-colorable v0.1.15/go.mod h1:6LmQG8QLFO4G5z1gPvYEzlUgJ2wF+stgPZH1UqBm1s8=
 github.com/mattn/go-isatty v0.0.22 h1:j8l17JJ9i6VGPUFUYoTUKPSgKe/83EYU2zBC7YNKMw4=
@@ -34,8 +32,8 @@ github.com/palantir/pkg/uuid v1.3.0 h1:ubiwfGpl1vTdrVmzXhRc1PVHD8/y60fT1QPwmziCE
 github.com/palantir/pkg/uuid v1.3.0/go.mod h1:OdOoLEDUu9LHBM2bdvyDXJ2IfH9gorI12ZMaaQu6zIo=
 github.com/palantir/witchcraft-go-error v1.47.0 h1:PCsDDVCD0lD5eWI4TpI2vZwXNnNKvmJOx9Ad53wp8vo=
 github.com/palantir/witchcraft-go-error v1.47.0/go.mod h1:bOFeal/mgaHA/0xLLbnJl4Rm8rfZsoGOQdo0zduqWjA=
-github.com/palantir/witchcraft-go-health/v2 v2.9.0 h1:ymFTti7Ag9uAujR5Ln+r9IlufbwtnxhigJauDsInVPU=
-github.com/palantir/witchcraft-go-health/v2 v2.9.0/go.mod h1:5fgIstHdY/kf8+qYpXRSzqYmZFXCvI+dCgQUZejQGvw=
+github.com/palantir/witchcraft-go-health/v2 v2.10.0 h1:RJh/kfZiDmUyBAOvREXQ6L9RwQ5UXcXKgK18cjhPhlU=
+github.com/palantir/witchcraft-go-health/v2 v2.10.0/go.mod h1:z9dLQpZGnSsqs1nQ+uhVTN0ly+gKhGU7DXGWpBQDV78=
 github.com/palantir/witchcraft-go-logging v1.70.0 h1:dQ8SnP+LeaRi0j5otnCi0PxT1Q6Pcl2Cl6Y/WdfI+SQ=
 github.com/palantir/witchcraft-go-logging v1.70.0/go.mod h1:plu2gClRwW31TGLFfuwzhMGTfI/gxIvtk9vihBYGMl0=
 github.com/palantir/witchcraft-go-params v1.43.0 h1:h+/MaedNBSMtCk5uK8I4LlIc6viRL/LVbChFt4jl4OE=
@@ -44,13 +42,11 @@ github.com/palantir/witchcraft-go-tracing v1.46.0 h1:jWB+fSq7YqNBEA2Ak4S7TutF93P
 github.com/palantir/witchcraft-go-tracing v1.46.0/go.mod h1:mJzyt+Zu8LBdZ16MgxzugP+Vun6IVPm5CK604+ovySU=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
-github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
-github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rs/zerolog v1.35.1 h1:m7xQeoiLIiV0BCEY4Hs+j2NG4Gp2o2KPKmhnnLiazKI=
 github.com/rs/zerolog v1.35.1/go.mod h1:EjML9kdfa/RMA7h/6z6pYmq1ykOuA8/mjWaEvGI+jcw=
 github.com/stathat/go v1.0.0/go.mod h1:+9Eg2szqkcOGWv6gfheJmBBsmq9Qf5KDbzy8/aYYR0c=
-github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
-github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
+github.com/stretchr/testify v1.12.0 h1:K6Mr6jO9JICuend/5xzTM03ydSV3vdNRYAdPSukj8uI=
+github.com/stretchr/testify v1.12.0/go.mod h1:bOYBZb5qJ00vPzWfIqBUZPaxK8jWiXc6d3ErP4Ca9Gw=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 go.uber.org/multierr v1.11.0 h1:blXXJkSxSSfBVBlC76pxqeO+LN3aDfLQo+309xJstO0=
