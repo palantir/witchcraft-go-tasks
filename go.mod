@@ -10,7 +10,7 @@ require (
 	github.com/palantir/witchcraft-go-health/v2 v2.10.0
 	github.com/palantir/witchcraft-go-logging v1.70.0
 	github.com/palantir/witchcraft-go-tracing v1.46.0
-	github.com/stretchr/testify v1.12.0
+	github.com/stretchr/testify v1.12.1
 	golang.org/x/sync v0.22.0
 )
 
@@ -29,6 +29,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
