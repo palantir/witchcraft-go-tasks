@@ -42,8 +42,9 @@ type ItemSubmitterConstraint interface {
 // background goroutine pulls items and delegates processing to a ConsumerWorkerPool.
 //
 // On failure, items are requeued with exponential backoff (500ms base, 10s max) up to
-// maxNumRequeues times (default 5). Processing results are reported to a
-// KeyedErrorHealthCheckSource using each item's String() value as the key.
+// maxNumRequeues times (default 5), or indefinitely when configured with
+// WithUnlimitedRetries. Processing results are reported to a KeyedErrorHealthCheckSource
+// using each item's String() value as the key.
 //
 // Items must implement comparable (for deduplication) and fmt.Stringer (for health keys).
 type ItemSubmitter[T ItemSubmitterConstraint] interface {
@@ -131,9 +132,13 @@ func (d defaultItemSubmitter[T]) singleProcessAttempt(ctx context.Context, eleme
 
 func (d defaultItemSubmitter[T]) handleProcessError(ctx context.Context, element T, err error) {
 	numRequeues := d.queue.NumRequeues(element)
-	ctx = svc1log.WithLoggerParams(ctx, svc1log.SafeParam("maxNumRequeues", d.config.maxNumRequeues), svc1log.SafeParam("numRequeues", numRequeues))
+	ctx = svc1log.WithLoggerParams(ctx,
+		svc1log.SafeParam("maxNumRequeues", d.config.maxNumRequeues),
+		svc1log.SafeParam("numRequeues", numRequeues),
+		svc1log.SafeParam("unlimitedRetries", d.config.unlimitedRetries),
+	)
 	d.config.logError(ctx, err)
-	if numRequeues >= d.config.maxNumRequeues {
+	if !d.config.unlimitedRetries && numRequeues >= d.config.maxNumRequeues {
 		d.queue.ResetRateLimit(element)
 	} else {
 		d.queue.AddRateLimited(element)

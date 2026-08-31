@@ -25,6 +25,7 @@ import (
 	"github.com/palantir/witchcraft-go-health/v2/conjure/witchcraft/api/health"
 	"github.com/palantir/witchcraft-go-health/v2/sources/window"
 	"github.com/palantir/witchcraft-go-tasks/function"
+	"github.com/palantir/witchcraft-go-tasks/internal/queue"
 	"github.com/palantir/witchcraft-go-tasks/internal/testcontext"
 	"github.com/palantir/witchcraft-go-tasks/workerpool"
 	"github.com/stretchr/testify/assert"
@@ -226,4 +227,24 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		assert.False(t, metricHasTagKey(registry, "com.palantir.witchcraft.process_element_duration", "itemsubmittername"),
 			"should not have itemsubmittername tag when option is unset")
 	})
+}
+
+func TestItemSubmitterUnlimitedRetriesRequeuesAfterMaximum(t *testing.T) {
+	ctx := testcontext.GetTestContext(t)
+	itemQueue := queue.NewCollapsingQueue[testItem]()
+	defer itemQueue.ShutDown()
+	submitter := defaultItemSubmitter[testItem]{
+		queue: itemQueue,
+		config: ItemSubmitterConfig{
+			maxNumRequeues:   0,
+			unlimitedRetries: true,
+			logError:         func(context.Context, error) {},
+		},
+	}
+
+	submitter.handleProcessError(ctx, testItem("test-item"), errors.New("persistent error"))
+
+	assert.Eventually(t, func() bool {
+		return itemQueue.Len() == 1
+	}, time.Second, 10*time.Millisecond)
 }
