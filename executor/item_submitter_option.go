@@ -26,6 +26,7 @@ type ItemSubmitterOption = func(c *ItemSubmitterConfig) *ItemSubmitterConfig
 // ItemSubmitterConfig is the configuration for ItemSubmitter. Configured with given options.
 type ItemSubmitterConfig struct {
 	maxNumRequeues       int
+	unlimitedRetries     bool
 	logError             func(ctx context.Context, err error)
 	itemSubmitterName    string
 	additionalMetricTags []metrics.Tag
@@ -33,10 +34,22 @@ type ItemSubmitterConfig struct {
 
 // WithMaxNumRequeues sets the maximum number of times an item will be requeued
 // after processing failures before being dropped. Defaults to 5 if not specified.
-// Any value under 1 will cause 0 requeues to occur
+// Any value under 1 will cause 0 requeues to occur. If combined with
+// WithUnlimitedRetries, the last option applied takes precedence.
 func WithMaxNumRequeues(maxNumRequeues int) ItemSubmitterOption {
 	return func(c *ItemSubmitterConfig) *ItemSubmitterConfig {
 		c.maxNumRequeues = maxNumRequeues
+		c.unlimitedRetries = false
+		return c
+	}
+}
+
+// WithUnlimitedRetries configures the ItemSubmitter to requeue failed items indefinitely.
+// Retries continue to use the queue's exponential backoff. If combined with
+// WithMaxNumRequeues, the last option applied takes precedence.
+func WithUnlimitedRetries() ItemSubmitterOption {
+	return func(c *ItemSubmitterConfig) *ItemSubmitterConfig {
+		c.unlimitedRetries = true
 		return c
 	}
 }
