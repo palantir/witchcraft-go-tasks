@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -399,6 +400,82 @@ func TestCollapsingQueue_AddRateLimited(t *testing.T) {
 		q.AddRateLimited("item1")
 		q.ShutDown()
 		assert.Equal(t, 0, q.Len())
+	})
+}
+
+func TestCollapsingQueue_AddAfter(t *testing.T) {
+	t.Run("adds item after delay", func(t *testing.T) {
+		q := NewCollapsingQueue[string]()
+		defer q.ShutDown()
+
+		q.AddAfter("item1", 20*time.Millisecond)
+
+		assert.Equal(t, 0, q.Len())
+		assert.Eventually(t, func() bool {
+			return q.Len() == 1
+		}, testTimeout, testInterval)
+	})
+	t.Run("collapses delayed submissions at earliest deadline", func(t *testing.T) {
+		q := NewCollapsingQueue[string]()
+		defer q.ShutDown()
+		concreteQueue, ok := q.(*collapsingQueue[string])
+		require.True(t, ok)
+
+		q.AddAfter("item1", time.Hour)
+		concreteQueue.delayedLock.Lock()
+		firstEntry := concreteQueue.delayedEntries["item1"]
+		concreteQueue.delayedLock.Unlock()
+		require.NotNil(t, firstEntry)
+
+		q.AddAfter("item1", 2*time.Hour)
+		concreteQueue.delayedLock.Lock()
+		laterEntry := concreteQueue.delayedEntries["item1"]
+		concreteQueue.delayedLock.Unlock()
+		assert.Same(t, firstEntry, laterEntry)
+
+		q.AddAfter("item1", 30*time.Minute)
+		concreteQueue.delayedLock.Lock()
+		earlierEntry := concreteQueue.delayedEntries["item1"]
+		entryCount := len(concreteQueue.delayedEntries)
+		concreteQueue.delayedLock.Unlock()
+		require.NotNil(t, earlierEntry)
+		assert.NotSame(t, firstEntry, earlierEntry)
+		assert.True(t, earlierEntry.readyAt.Before(firstEntry.readyAt))
+		assert.Equal(t, 1, entryCount)
+	})
+	t.Run("collapses concurrent delayed submissions", func(t *testing.T) {
+		q := NewCollapsingQueue[int]()
+		defer q.ShutDown()
+		concreteQueue, ok := q.(*collapsingQueue[int])
+		require.True(t, ok)
+
+		var wg sync.WaitGroup
+		for range 100 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				q.AddAfter(1, time.Hour)
+			}()
+		}
+		wg.Wait()
+
+		concreteQueue.delayedLock.Lock()
+		entryCount := len(concreteQueue.delayedEntries)
+		concreteQueue.delayedLock.Unlock()
+		assert.Equal(t, 1, entryCount)
+	})
+	t.Run("cancels delayed submissions on shutdown", func(t *testing.T) {
+		q := NewCollapsingQueue[string]()
+		concreteQueue, ok := q.(*collapsingQueue[string])
+		require.True(t, ok)
+		q.AddAfter("item1", time.Hour)
+
+		q.ShutDown()
+
+		concreteQueue.delayedLock.Lock()
+		entryCount := len(concreteQueue.delayedEntries)
+		concreteQueue.delayedLock.Unlock()
+		assert.Equal(t, 0, entryCount)
 	})
 }
 

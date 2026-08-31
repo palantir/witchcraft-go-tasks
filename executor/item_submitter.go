@@ -52,6 +52,16 @@ type ItemSubmitter[T ItemSubmitterConstraint] interface {
 	// processing happens asynchronously. Duplicate submissions are collapsed.
 	Submit(context.Context, T)
 }
+
+// DelayedItemSubmitter extends ItemSubmitter with keyed delayed submission. Delayed submissions
+// for the same item are collapsed while waiting, with the earliest requested deadline taking
+// precedence.
+type DelayedItemSubmitter[T ItemSubmitterConstraint] interface {
+	ItemSubmitter[T]
+	// SubmitAfter adds an item to the queue after the provided delay. Returns immediately.
+	SubmitAfter(context.Context, T, time.Duration)
+}
+
 type defaultItemSubmitter[T ItemSubmitterConstraint] struct {
 	consumerWorkerPool          workerpool.ConsumerWorkerPool[T]
 	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
@@ -65,7 +75,7 @@ func NewDefaultItemSubmitter[T ItemSubmitterConstraint](
 	ctx context.Context,
 	consumerWorkerPool workerpool.ConsumerWorkerPool[T],
 	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource,
-	options ...ItemSubmitterOption) ItemSubmitter[T] {
+	options ...ItemSubmitterOption) DelayedItemSubmitter[T] {
 	config := ItemSubmitterConfig{
 		maxNumRequeues: 5,
 		logError: func(ctx context.Context, err error) {
@@ -88,11 +98,19 @@ func NewDefaultItemSubmitter[T ItemSubmitterConstraint](
 		config:                      config,
 	}
 	go defaultItemSubmitterArg.startPullingFromQueue(ctx)
+	go func() {
+		<-ctx.Done()
+		defaultItemSubmitterArg.queue.ShutDown()
+	}()
 	return defaultItemSubmitterArg
 }
 
 func (d defaultItemSubmitter[T]) Submit(ctx context.Context, element T) {
 	d.queue.Add(element)
+}
+
+func (d defaultItemSubmitter[T]) SubmitAfter(ctx context.Context, element T, delay time.Duration) {
+	d.queue.AddAfter(element, delay)
 }
 
 func (d defaultItemSubmitter[T]) startPullingFromQueue(ctx context.Context) {
