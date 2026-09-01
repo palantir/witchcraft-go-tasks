@@ -39,6 +39,9 @@ type CollapsingQueue[T comparable] interface {
 	// cycle.
 	Done(item T)
 
+	// AddAfter adds an item to the queue after the provided delay. Delayed additions are collapsed
+	// by item while waiting, with the earliest requested deadline taking precedence.
+	AddAfter(item T, delay time.Duration)
 	// AddRateLimited adds an item to the queue after the rate limiter determines
 	// an appropriate delay. The delay increases with each requeue of the same item.
 	// Use this when re-adding items that failed processing to implement backoff.
@@ -54,13 +57,18 @@ type CollapsingQueue[T comparable] interface {
 // NewCollapsingQueue constructs a new deduplicating work queue.
 func NewCollapsingQueue[T comparable]() CollapsingQueue[T] {
 	return &collapsingQueue[T]{
-		queue:       new(queueWrapper[T]),
-		dirty:       collections.Set[T]{},
-		processing:  collections.Set[T]{},
-		cond:        sync.NewCond(&sync.Mutex{}),
-		stopCh:      make(chan struct{}),
-		rateLimiter: NewItemExponentialFailureRateLimiter[T](time.Millisecond*500, time.Second*10),
+		queue:          new(queueWrapper[T]),
+		dirty:          collections.Set[T]{},
+		processing:     collections.Set[T]{},
+		cond:           sync.NewCond(&sync.Mutex{}),
+		delayedEntries: make(map[T]*delayedEntry),
+		rateLimiter:    NewItemExponentialFailureRateLimiter[T](time.Millisecond*500, time.Second*10),
 	}
+}
+
+type delayedEntry struct {
+	readyAt time.Time
+	timer   *time.Timer
 }
 
 type collapsingQueue[T comparable] struct {
@@ -83,30 +91,63 @@ type collapsingQueue[T comparable] struct {
 	shuttingDown bool
 	drain        bool
 
-	// wg manages goroutines started by the queue to allow graceful shutdown
-	// ShutDown() will wait for goroutines to exit before returning.
+	// delayedLock serializes delayed entry creation with shutdown. This ensures that no timer can
+	// be added after shutdown begins concurrently with the final wait.
+	delayedLock    sync.Mutex
+	delayedEntries map[T]*delayedEntry
+	// wg manages delayed timer callbacks so shutdown can wait for callbacks already in progress.
 	wg sync.WaitGroup
-
-	stopCh chan struct{}
-	// stopOnce guarantees we only signal shutdown a single time
-	stopOnce sync.Once
 
 	rateLimiter RateLimiter[T]
 }
 
 func (q *collapsingQueue[T]) AddRateLimited(item T) {
 	delay := q.rateLimiter.When(item)
+	q.AddAfter(item, delay)
+}
+
+func (q *collapsingQueue[T]) AddAfter(item T, delay time.Duration) {
 	if delay <= 0 {
 		q.Add(item)
 		return
 	}
-	q.wg.Add(1)
-	time.AfterFunc(delay, func() {
-		defer q.wg.Done()
-		if !q.ShuttingDown() {
-			q.Add(item)
+
+	readyAt := time.Now().Add(delay)
+	q.delayedLock.Lock()
+	defer q.delayedLock.Unlock()
+
+	q.cond.L.Lock()
+	shuttingDown := q.shuttingDown
+	q.cond.L.Unlock()
+	if shuttingDown {
+		return
+	}
+
+	if existing, ok := q.delayedEntries[item]; ok {
+		if !readyAt.Before(existing.readyAt) {
+			return
 		}
+		if existing.timer.Stop() {
+			q.wg.Done()
+		}
+	}
+
+	entry := &delayedEntry{readyAt: readyAt}
+	q.wg.Add(1)
+	entry.timer = time.AfterFunc(delay, func() {
+		defer q.wg.Done()
+
+		q.delayedLock.Lock()
+		if q.delayedEntries[item] != entry {
+			q.delayedLock.Unlock()
+			return
+		}
+		delete(q.delayedEntries, item)
+		q.delayedLock.Unlock()
+
+		q.Add(item)
 	})
+	q.delayedEntries[item] = entry
 }
 
 func (q *collapsingQueue[T]) ResetRateLimit(item T) {
@@ -182,33 +223,42 @@ func (q *collapsingQueue[T]) Done(item T) {
 }
 
 func (q *collapsingQueue[T]) ShutDown() {
-	defer q.wg.Wait()
-	q.stopOnce.Do(func() {
-		defer close(q.stopCh)
-	})
-
+	q.delayedLock.Lock()
 	q.cond.L.Lock()
-	defer q.cond.L.Unlock()
-
 	q.drain = false
 	q.shuttingDown = true
 	q.cond.Broadcast()
+	q.cond.L.Unlock()
+	q.cancelDelayedEntries()
+	q.delayedLock.Unlock()
+	q.wg.Wait()
 }
 
 func (q *collapsingQueue[T]) ShutDownWithDrain() {
-	defer q.wg.Wait()
-	q.stopOnce.Do(func() {
-		defer close(q.stopCh)
-	})
+	q.delayedLock.Lock()
 	q.cond.L.Lock()
-	defer q.cond.L.Unlock()
-
 	q.drain = true
 	q.shuttingDown = true
 	q.cond.Broadcast()
+	q.cond.L.Unlock()
+	q.cancelDelayedEntries()
+	q.delayedLock.Unlock()
+	q.wg.Wait()
 
+	q.cond.L.Lock()
+	defer q.cond.L.Unlock()
 	for q.processing.Len() != 0 && q.drain {
 		q.cond.Wait()
+	}
+}
+
+// cancelDelayedEntries must be called while delayedLock is held.
+func (q *collapsingQueue[T]) cancelDelayedEntries() {
+	for item, entry := range q.delayedEntries {
+		delete(q.delayedEntries, item)
+		if entry.timer.Stop() {
+			q.wg.Done()
+		}
 	}
 }
 

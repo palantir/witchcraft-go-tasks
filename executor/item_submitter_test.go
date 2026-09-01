@@ -29,6 +29,7 @@ import (
 	"github.com/palantir/witchcraft-go-tasks/internal/testcontext"
 	"github.com/palantir/witchcraft-go-tasks/workerpool"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type testItem string
@@ -227,6 +228,42 @@ func TestItemSubmitter_Submit(t *testing.T) {
 		assert.False(t, metricHasTagKey(registry, "com.palantir.witchcraft.process_element_duration", "itemsubmittername"),
 			"should not have itemsubmittername tag when option is unset")
 	})
+}
+
+func TestItemSubmitter_SubmitAfter(t *testing.T) {
+	ctx := testcontext.GetTestContext(t)
+	healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
+	processed := make(chan testItem, 1)
+	consumer := function.NewConsumerFromFunc(func(_ context.Context, item testItem) error {
+		processed <- item
+		return nil
+	})
+	pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
+	submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource)
+
+	submitter.SubmitAfter(ctx, testItem("test-item"), 20*time.Millisecond)
+
+	select {
+	case item := <-processed:
+		assert.Equal(t, testItem("test-item"), item)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for delayed item to be processed")
+	}
+}
+
+func TestItemSubmitter_ShutsDownQueueWhenContextIsCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+	healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
+	consumer := function.NewConsumerFromFunc(func(_ context.Context, _ testItem) error { return nil })
+	pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer)
+	submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource)
+	concreteSubmitter, ok := submitter.(*defaultItemSubmitter[testItem])
+	require.True(t, ok)
+	submitter.SubmitAfter(ctx, testItem("test-item"), time.Hour)
+
+	cancel()
+
+	assert.Eventually(t, concreteSubmitter.queue.ShuttingDown, time.Second, 10*time.Millisecond)
 }
 
 func TestItemSubmitterUnlimitedRetriesRequeuesAfterMaximum(t *testing.T) {
