@@ -15,8 +15,10 @@
 package types
 
 // ToPointer returns a pointer to the object passed in
+//
+//go:fix inline
 func ToPointer[T any](t T) *T {
-	return &t
+	return new(t)
 }
 
 // ToValue dereferences the pointer object passed in

@@ -109,14 +109,12 @@ func TestCollapsingQueue_GetWithCallbackNotCalledOnShutdown(t *testing.T) {
 	q := NewCollapsingQueue[string]()
 	var callbackCalled bool
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		_, shutdown := q.GetWithCallback(func() {
 			callbackCalled = true
 		})
 		assert.True(t, shutdown)
-	}()
+	})
 	q.ShutDown()
 	wg.Wait()
 	assert.False(t, callbackCalled)
@@ -127,11 +125,9 @@ func TestCollapsingQueue_GetBlocksUntilItemAdded(t *testing.T) {
 	var item string
 	var shutdown bool
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		item, shutdown = q.Get()
-	}()
+	})
 	q.Add("item1")
 	wg.Wait()
 	assert.False(t, shutdown)
@@ -150,11 +146,9 @@ func TestCollapsingQueue_ShutDownUnblocksGet(t *testing.T) {
 	var item string
 	var shutdown bool
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		item, shutdown = q.Get()
-	}()
+	})
 	q.ShutDown()
 	wg.Wait()
 	assert.True(t, shutdown)
@@ -254,17 +248,13 @@ func TestCollapsingQueue_ConcurrentReAddWhileProcessing(t *testing.T) {
 	numIterations := 100
 	var processed atomic.Int32
 	for range numWorkers {
-		producerWg.Add(1)
-		go func() {
-			defer producerWg.Done()
+		producerWg.Go(func() {
 			for range numIterations {
 				q.Add(1)
 			}
-		}()
+		})
 	}
-	consumerWg.Add(1)
-	go func() {
-		defer consumerWg.Done()
+	consumerWg.Go(func() {
 		for {
 			item, shutdown := q.Get()
 			if shutdown {
@@ -273,7 +263,7 @@ func TestCollapsingQueue_ConcurrentReAddWhileProcessing(t *testing.T) {
 			processed.Add(1)
 			q.Done(item)
 		}
-	}()
+	})
 	producerWg.Wait()
 	q.ShutDown()
 	consumerWg.Wait()
@@ -290,9 +280,7 @@ func TestCollapsingQueue_MultipleWorkersDone(t *testing.T) {
 	var processed atomic.Int32
 	numWorkers := 10
 	for range numWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				item, shutdown := q.Get()
 				if shutdown {
@@ -301,7 +289,7 @@ func TestCollapsingQueue_MultipleWorkersDone(t *testing.T) {
 				processed.Add(1)
 				q.Done(item)
 			}
-		}()
+		})
 	}
 	assert.Eventually(t, func() bool {
 		return processed.Load() >= int32(numItems)
@@ -317,14 +305,12 @@ func TestCollapsingQueue_ShutDownWithMultipleBlockedGetters(t *testing.T) {
 	var wg sync.WaitGroup
 	var shutdownCount atomic.Int32
 	for range numGetters {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, shutdown := q.Get()
 			if shutdown {
 				shutdownCount.Add(1)
 			}
-		}()
+		})
 	}
 	q.ShutDown()
 	wg.Wait()
@@ -359,9 +345,7 @@ func TestCollapsingQueue_ShutDownWithDrainMultipleWorkers(t *testing.T) {
 	var processed atomic.Int32
 	numWorkers := 5
 	for range numWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				item, shutdown := q.Get()
 				if shutdown {
@@ -370,7 +354,7 @@ func TestCollapsingQueue_ShutDownWithDrainMultipleWorkers(t *testing.T) {
 				processed.Add(1)
 				q.Done(item)
 			}
-		}()
+		})
 	}
 	q.ShutDownWithDrain()
 	wg.Wait()
@@ -451,11 +435,9 @@ func TestCollapsingQueue_AddAfter(t *testing.T) {
 
 		var wg sync.WaitGroup
 		for range 100 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				q.AddAfter(1, time.Hour)
-			}()
+			})
 		}
 		wg.Wait()
 
@@ -520,17 +502,15 @@ func TestCollapsingQueue_ConcurrentAddRateLimited(t *testing.T) {
 	numGoroutines := 10
 	numItemsPerGoroutine := 100
 	var wg sync.WaitGroup
-	for g := 0; g < numGoroutines; g++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < numItemsPerGoroutine; i++ {
+	for range numGoroutines {
+		wg.Go(func() {
+			for i := range numItemsPerGoroutine {
 				q.AddRateLimited(i)
 			}
-		}()
+		})
 	}
 	wg.Wait()
-	for i := 0; i < numItemsPerGoroutine; i++ {
+	for i := range numItemsPerGoroutine {
 		assert.Equal(t, numGoroutines, q.NumRequeues(i))
 	}
 }
@@ -543,13 +523,13 @@ func TestCollapsingQueue_ConcurrentForgetAndAddRateLimited(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < numIterations; i++ {
+		for range numIterations {
 			q.AddRateLimited(1)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		for i := 0; i < numIterations; i++ {
+		for range numIterations {
 			q.ResetRateLimit(1)
 		}
 	}()
