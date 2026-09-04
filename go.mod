@@ -2,7 +2,7 @@ module github.com/palantir/witchcraft-go-tasks
 
 go 1.26.0
 
-toolchain go1.26.7
+toolchain go1.26.8
 
 require (
 	github.com/palantir/pkg/metrics v1.10.1
