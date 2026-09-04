@@ -20,7 +20,7 @@ require (
 	github.com/palantir/pkg v1.2.0 // indirect
 	github.com/palantir/pkg/datetime v1.4.0 // indirect
 	github.com/palantir/pkg/refreshable/v2 v2.9.0 // indirect
-	github.com/palantir/pkg/safejson v1.2.0 // indirect
+	github.com/palantir/pkg/safejson v1.3.0 // indirect
 	github.com/palantir/pkg/safelong v1.3.0 // indirect
 	github.com/palantir/pkg/safeyaml v1.2.0 // indirect
 	github.com/palantir/pkg/transform v1.2.0 // indirect
