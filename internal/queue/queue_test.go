@@ -74,11 +74,9 @@ func TestQueue_GetBlocksUntilItemAdded(t *testing.T) {
 	var item string
 	var shutdown bool
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		item, shutdown = q.Get()
-	}()
+	})
 	q.Add("item1")
 	wg.Wait()
 	assert.False(t, shutdown)
@@ -97,11 +95,9 @@ func TestQueue_ShutDownUnblocksGet(t *testing.T) {
 	var item string
 	var shutdown bool
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		item, shutdown = q.Get()
-	}()
+	})
 	q.ShutDown()
 	wg.Wait()
 	assert.True(t, shutdown)
@@ -119,11 +115,9 @@ func TestQueue_ShutDownWithDrain(t *testing.T) {
 	q := NewQueue[string]()
 	q.Add("item1")
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		q.ShutDownWithDrain()
-	}()
+	})
 	item, shutdown := q.Get()
 	assert.False(t, shutdown)
 	assert.Equal(t, "item1", item)
@@ -173,18 +167,14 @@ func TestQueue_MultipleProducersMultipleConsumers(t *testing.T) {
 	var consumerWg sync.WaitGroup
 	var received atomic.Int32
 	for range numProducers {
-		producerWg.Add(1)
-		go func() {
-			defer producerWg.Done()
+		producerWg.Go(func() {
 			for i := range itemsPerProducer {
 				q.Add(i)
 			}
-		}()
+		})
 	}
 	for range numConsumers {
-		consumerWg.Add(1)
-		go func() {
-			defer consumerWg.Done()
+		consumerWg.Go(func() {
 			for {
 				_, shutdown := q.Get()
 				if shutdown {
@@ -192,7 +182,7 @@ func TestQueue_MultipleProducersMultipleConsumers(t *testing.T) {
 				}
 				received.Add(1)
 			}
-		}()
+		})
 	}
 	producerWg.Wait()
 	q.ShutDown()
@@ -206,14 +196,12 @@ func TestQueue_ShutDownWithMultipleBlockedGetters(t *testing.T) {
 	var wg sync.WaitGroup
 	var shutdownCount atomic.Int32
 	for range numGetters {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, shutdown := q.Get()
 			if shutdown {
 				shutdownCount.Add(1)
 			}
-		}()
+		})
 	}
 	q.ShutDown()
 	wg.Wait()
@@ -242,14 +230,12 @@ func TestQueue_ConcurrentLenCalls(t *testing.T) {
 	q := NewQueue[int]()
 	var wg sync.WaitGroup
 	for range 10 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 100 {
 				q.Add(1)
 				_ = q.Len()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
