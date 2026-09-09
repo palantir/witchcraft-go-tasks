@@ -9,7 +9,7 @@ require (
 	github.com/palantir/witchcraft-go-error v1.50.0
 	github.com/palantir/witchcraft-go-health/v2 v2.14.0
 	github.com/palantir/witchcraft-go-logging v1.73.0
-	github.com/palantir/witchcraft-go-tracing v1.48.0
+	github.com/palantir/witchcraft-go-tracing v1.49.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/sync v0.23.0
 )
