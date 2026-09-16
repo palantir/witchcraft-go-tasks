@@ -266,10 +266,10 @@ func Test_CanSubmitWithMetrics(t *testing.T) {
 		valueAsCounter := value.Values()
 		if name == cacheMetricName {
 			workersReported = true
-			assert.Equal(t, map[string]interface{}{"value": int64(1)}, valueAsCounter)
+			assert.Equal(t, map[string]any{"value": int64(1)}, valueAsCounter)
 		} else if name == enqueuedMetricName {
 			queueLengthReported = true
-			assert.Equal(t, map[string]interface{}{"value": int64(0)}, valueAsCounter)
+			assert.Equal(t, map[string]any{"value": int64(0)}, valueAsCounter)
 		} else {
 			assert.Fail(t, "unknown metric encountered", name)
 		}
