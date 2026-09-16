@@ -22,7 +22,7 @@ import (
 
 func TestToPointer(t *testing.T) {
 	testValue := "foo"
-	testValuePointer := ToPointer(testValue)
+	testValuePointer := new(testValue)
 	assert.Equal(t, &testValue, testValuePointer)
 }
 
