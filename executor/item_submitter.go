@@ -16,6 +16,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -26,6 +27,14 @@ import (
 	"github.com/palantir/witchcraft-go-tasks/workerpool"
 	"github.com/palantir/witchcraft-go-tracing/wtracing"
 )
+
+// ErrItemSubmitterShutdown indicates that an item could not be submitted
+// because the submitter has started shutting down.
+var ErrItemSubmitterShutdown = errors.New("item submitter is shutting down")
+
+// ErrItemSubmitterContext indicates that the caller's context was cancelled
+// before the item could be submitted.
+var ErrItemSubmitterContext = errors.New("item submitter context cancelled")
 
 // ItemSubmitterConstraint defines the type requirements for items processed by ItemSubmitter.
 // Items must be comparable (for deduplication) and implement fmt.Stringer (for health keys).
@@ -51,6 +60,9 @@ type ItemSubmitter[T ItemSubmitterConstraint] interface {
 	// Submit adds an item to the queue for eventual processing. Returns immediately;
 	// processing happens asynchronously. Duplicate submissions are collapsed.
 	Submit(context.Context, T)
+	// TrySubmit is like Submit but reports cancellation or shutdown instead of
+	// silently discarding the item.
+	TrySubmit(context.Context, T) error
 }
 
 // DelayedItemSubmitter extends ItemSubmitter with keyed delayed submission. Delayed submissions
@@ -60,6 +72,8 @@ type DelayedItemSubmitter[T ItemSubmitterConstraint] interface {
 	ItemSubmitter[T]
 	// SubmitAfter adds an item to the queue after the provided delay. Returns immediately.
 	SubmitAfter(context.Context, T, time.Duration)
+	// TrySubmitAfter is like SubmitAfter but reports cancellation or shutdown.
+	TrySubmitAfter(context.Context, T, time.Duration) error
 }
 
 type defaultItemSubmitter[T ItemSubmitterConstraint] struct {
@@ -106,11 +120,31 @@ func NewDefaultItemSubmitter[T ItemSubmitterConstraint](
 }
 
 func (d defaultItemSubmitter[T]) Submit(ctx context.Context, element T) {
-	d.queue.Add(element)
+	_ = d.TrySubmit(ctx, element)
 }
 
 func (d defaultItemSubmitter[T]) SubmitAfter(ctx context.Context, element T, delay time.Duration) {
-	d.queue.AddAfter(element, delay)
+	_ = d.TrySubmitAfter(ctx, element, delay)
+}
+
+func (d defaultItemSubmitter[T]) TrySubmit(ctx context.Context, element T) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: %v", ErrItemSubmitterContext, err)
+	}
+	if !d.queue.AddIfRunning(element) {
+		return ErrItemSubmitterShutdown
+	}
+	return nil
+}
+
+func (d defaultItemSubmitter[T]) TrySubmitAfter(ctx context.Context, element T, delay time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: %v", ErrItemSubmitterContext, err)
+	}
+	if !d.queue.AddAfterIfRunning(element, delay) {
+		return ErrItemSubmitterShutdown
+	}
+	return nil
 }
 
 func (d defaultItemSubmitter[T]) startPullingFromQueue(ctx context.Context) {

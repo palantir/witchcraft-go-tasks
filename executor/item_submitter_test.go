@@ -17,6 +17,7 @@ package executor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -36,6 +37,29 @@ type testItem string
 
 func (t testItem) String() string {
 	return string(t)
+}
+
+func TestTrySubmitLifecycleErrors(t *testing.T) {
+	for _, delayed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("delayed=%t", delayed), func(t *testing.T) {
+			q := queue.NewCollapsingQueue[testItem]()
+			defer q.ShutDown()
+			submitter := defaultItemSubmitter[testItem]{queue: q}
+			submit := func(ctx context.Context) error {
+				if delayed {
+					return submitter.TrySubmitAfter(ctx, testItem("item"), time.Hour)
+				}
+				return submitter.TrySubmit(ctx, testItem("item"))
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			require.ErrorIs(t, submit(ctx), ErrItemSubmitterContext)
+			require.Equal(t, 0, q.Len())
+			require.NoError(t, submit(context.Background()))
+			q.ShutDown()
+			require.ErrorIs(t, submit(context.Background()), ErrItemSubmitterShutdown)
+		})
+	}
 }
 
 func metricHasTag(registry metrics.RootRegistry, metricName, tagKey, tagValue string) bool {
