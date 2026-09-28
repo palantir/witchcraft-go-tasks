@@ -16,6 +16,7 @@ package workerpool
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 
 	"github.com/palantir/pkg/metrics"
@@ -33,6 +34,7 @@ const (
 )
 
 type defaultSupplierWorkerPool[R any] struct {
+	submitLock                    sync.Mutex
 	config                        Config
 	queue                         queue.Queue[workerPoolWrapperObject[R]]
 	numberFree                    atomic.Int64
@@ -61,6 +63,10 @@ func NewDefaultSupplierWorkerPool[R any](ctx context.Context, options ...Option)
 }
 
 func (d *defaultSupplierWorkerPool[R]) Submit(ctxFromClient context.Context, supplier function.Supplier[R]) async.Future[R] {
+	// Serialize worker reservation and enqueueing so concurrent submissions cannot exceed the worker limit.
+	d.submitLock.Lock()
+	defer d.submitLock.Unlock()
+
 	if d.needAdditionalWorker() {
 		d.startWorkerAsync()
 		d.markWorkerCount()
@@ -100,8 +106,7 @@ func (d *defaultSupplierWorkerPool[R]) getCurrentCount() int {
 }
 
 func (d *defaultSupplierWorkerPool[R]) startWorkerAsync() {
-	d.totalCount.Add(1)
-	workerID := d.getCurrentCount()
+	workerID := int(d.totalCount.Add(1))
 	ctx := svc1log.WithLoggerParams(d.parentContextForWorkerThreads, svc1log.SafeParam("workerID", workerID))
 	go d.startWorker(ctx)
 }
