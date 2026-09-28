@@ -17,12 +17,15 @@ package workerpool
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/palantir/pkg/metrics"
 	werror "github.com/palantir/witchcraft-go-error"
 	"github.com/palantir/witchcraft-go-tasks/function"
+	"github.com/palantir/witchcraft-go-tasks/internal/testcontext"
 	"github.com/palantir/witchcraft-go-tasks/util/async"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -119,6 +122,138 @@ func Test_SerialWorkerpoolFetching_WorkerCap(t *testing.T) {
 	assert.Equal(t, 0, workerPoolTyped.queue.Len())
 	assert.Equal(t, 2, int(workerPoolTyped.numberFree.Load()))
 	assert.Equal(t, 2, int(workerPoolTyped.totalCount.Load()))
+}
+
+func Test_WorkerpoolConcurrentSubmissions_WorkerCap(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		maxWorkers     int
+		initialWorkers int
+	}{{
+		name:       "one worker",
+		maxWorkers: 1,
+	}, {
+		name:       "four workers cold",
+		maxWorkers: 4,
+	}, {
+		name:           "four workers partially populated",
+		maxWorkers:     4,
+		initialWorkers: 2,
+	}, {
+		name:       "eight workers cold",
+		maxWorkers: 8,
+	}, {
+		name:           "eight workers partially populated",
+		maxWorkers:     8,
+		initialWorkers: 7,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+				defer cancel()
+				workerPool := NewDefaultSupplierWorkerPool[int](ctx, WithMaxNumberOfWorkers(tc.maxWorkers)).(*defaultSupplierWorkerPool[int])
+				require.Zero(t, workerPool.getCurrentCount())
+
+				assertConcurrentSupplierWave(t, ctx, workerPool, tc.initialWorkers, tc.initialWorkers)
+				for range 3 {
+					assertConcurrentSupplierWave(t, ctx, workerPool, 64, tc.maxWorkers)
+				}
+			})
+		})
+	}
+}
+
+func Test_WorkerpoolConcurrentSubmissions_NoCap(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		options []Option
+	}{{
+		name: "unset",
+	}, {
+		name:    "zero",
+		options: []Option{WithMaxNumberOfWorkers(0)},
+	}, {
+		name:    "negative",
+		options: []Option{WithMaxNumberOfWorkers(-1)},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+				defer cancel()
+				workerPool := NewDefaultSupplierWorkerPool[int](ctx, tc.options...).(*defaultSupplierWorkerPool[int])
+				require.Zero(t, workerPool.getCurrentCount())
+
+				for range 2 {
+					assertConcurrentSupplierWave(t, ctx, workerPool, 32, 32)
+				}
+			})
+		})
+	}
+}
+
+// assertConcurrentSupplierWave must run inside a synctest bubble with all existing workers idle.
+func assertConcurrentSupplierWave(t *testing.T, ctx context.Context, workerPool *defaultSupplierWorkerPool[int], submissions, workers int) {
+	t.Helper()
+	start := make(chan struct{})
+	release := make(chan struct{})
+	releaseSuppliers := sync.OnceFunc(func() { close(release) })
+	defer releaseSuppliers()
+
+	var countsLock sync.Mutex
+	active, maxActive := 0, 0
+	executions := make([]int, submissions)
+	futures := make([]async.Future[int], submissions)
+	var ready, submitted sync.WaitGroup
+	ready.Add(submissions)
+	submitted.Add(submissions)
+	for i := range submissions {
+		go func() {
+			defer submitted.Done()
+			ready.Done()
+			<-start
+			futures[i] = workerPool.Submit(ctx, function.NewSupplierFromFunc(func(context.Context) (int, error) {
+				countsLock.Lock()
+				executions[i]++
+				active++
+				maxActive = max(maxActive, active)
+				countsLock.Unlock()
+
+				<-release
+
+				countsLock.Lock()
+				active--
+				countsLock.Unlock()
+				return i, nil
+			}))
+		}()
+	}
+	ready.Wait()
+	close(start)
+	submitted.Wait()
+	// Every worker is blocked in its supplier, so these checks cannot miss a late start.
+	synctest.Wait()
+	assert.Equal(t, workers, workerPool.getCurrentCount())
+	assert.Equal(t, workers, active)
+	assert.Equal(t, submissions-workers, workerPool.queue.Len())
+
+	releaseSuppliers()
+	for i, future := range futures {
+		result, err := future.Get(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, i, result)
+		result, err = future.Get(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, i, result)
+	}
+	synctest.Wait()
+	assert.Equal(t, workers, maxActive)
+	assert.Zero(t, active)
+	for i, count := range executions {
+		assert.Equal(t, 1, count, "supplier %d must execute exactly once", i)
+	}
+	assert.Zero(t, workerPool.queue.Len())
+	assert.Equal(t, int64(workers), workerPool.numberFree.Load())
+	assert.Equal(t, workers, workerPool.getCurrentCount())
 }
 
 func Test_WorkerpoolFetching_NoCapThroughput(t *testing.T) {
