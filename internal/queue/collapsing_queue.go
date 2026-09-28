@@ -33,6 +33,9 @@ import (
 // item was re-added while being processed, Done() will re-queue it for processing.
 type CollapsingQueue[T comparable] interface {
 	Queue[T]
+	// AddIfRunning adds an item unless shutdown has started. It returns false
+	// when the item was rejected because the queue is shutting down.
+	AddIfRunning(item T) bool
 	// Done marks the item as finished processing, and must be called once for each
 	// item returned by Get or GetWithCallback. If the item was re-added to the
 	// queue while it was being processed, it will be re-queued for another processing
@@ -42,6 +45,9 @@ type CollapsingQueue[T comparable] interface {
 	// AddAfter adds an item to the queue after the provided delay. Delayed additions are collapsed
 	// by item while waiting, with the earliest requested deadline taking precedence.
 	AddAfter(item T, delay time.Duration)
+	// AddAfterIfRunning adds an item unless shutdown has started. It returns false
+	// when the item was rejected because the queue is shutting down.
+	AddAfterIfRunning(item T, delay time.Duration) bool
 	// AddRateLimited adds an item to the queue after the rate limiter determines
 	// an appropriate delay. The delay increases with each requeue of the same item.
 	// Use this when re-adding items that failed processing to implement backoff.
@@ -107,9 +113,12 @@ func (q *collapsingQueue[T]) AddRateLimited(item T) {
 }
 
 func (q *collapsingQueue[T]) AddAfter(item T, delay time.Duration) {
+	q.AddAfterIfRunning(item, delay)
+}
+
+func (q *collapsingQueue[T]) AddAfterIfRunning(item T, delay time.Duration) bool {
 	if delay <= 0 {
-		q.Add(item)
-		return
+		return q.AddIfRunning(item)
 	}
 
 	readyAt := time.Now().Add(delay)
@@ -120,12 +129,12 @@ func (q *collapsingQueue[T]) AddAfter(item T, delay time.Duration) {
 	shuttingDown := q.shuttingDown
 	q.cond.L.Unlock()
 	if shuttingDown {
-		return
+		return false
 	}
 
 	if existing, ok := q.delayedEntries[item]; ok {
 		if !readyAt.Before(existing.readyAt) {
-			return
+			return true
 		}
 		if existing.timer.Stop() {
 			q.wg.Done()
@@ -148,6 +157,7 @@ func (q *collapsingQueue[T]) AddAfter(item T, delay time.Duration) {
 		q.Add(item)
 	})
 	q.delayedEntries[item] = entry
+	return true
 }
 
 func (q *collapsingQueue[T]) ResetRateLimit(item T) {
@@ -159,22 +169,27 @@ func (q *collapsingQueue[T]) NumRequeues(item T) int {
 }
 
 func (q *collapsingQueue[T]) Add(item T) {
+	q.AddIfRunning(item)
+}
+
+func (q *collapsingQueue[T]) AddIfRunning(item T) bool {
 	q.cond.L.Lock()
 	defer q.cond.L.Unlock()
 	if q.shuttingDown {
-		return
+		return false
 	}
 	if q.dirty.Has(item) {
-		return
+		return true
 	}
 
 	q.dirty.Insert(item)
 	if q.processing.Has(item) {
-		return
+		return true
 	}
 
 	q.queue.Push(item)
 	q.cond.Signal()
+	return true
 }
 
 func (q *collapsingQueue[T]) Len() int {

@@ -16,6 +16,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -26,6 +27,14 @@ import (
 	"github.com/palantir/witchcraft-go-tasks/workerpool"
 	"github.com/palantir/witchcraft-go-tracing/wtracing"
 )
+
+// ErrItemSubmitterShutdown indicates that an item could not be submitted
+// because the submitter has started shutting down.
+var ErrItemSubmitterShutdown = errors.New("item submitter is shutting down")
+
+// ErrItemSubmitterContext indicates that the caller's context was cancelled
+// before the item could be submitted.
+var ErrItemSubmitterContext = errors.New("item submitter context cancelled")
 
 // ItemSubmitterConstraint defines the type requirements for items processed by ItemSubmitter.
 // Items must be comparable (for deduplication) and implement fmt.Stringer (for health keys).
@@ -62,6 +71,25 @@ type DelayedItemSubmitter[T ItemSubmitterConstraint] interface {
 	SubmitAfter(context.Context, T, time.Duration)
 }
 
+// ObservableItemSubmitter reports whether immediate submission was accepted.
+// Acceptance does not guarantee completion or persistence. Cancellation after
+// acceptance does not retract the item.
+type ObservableItemSubmitter[T ItemSubmitterConstraint] interface {
+	ItemSubmitter[T]
+	// TrySubmit rejects an already-cancelled caller context or a stopped queue.
+	// Duplicate items count as accepted, even when collapsed with existing work.
+	TrySubmit(context.Context, T) error
+}
+
+// ObservableDelayedItemSubmitter adds acceptance reporting without requiring
+// existing ItemSubmitter or DelayedItemSubmitter implementations to change.
+type ObservableDelayedItemSubmitter[T ItemSubmitterConstraint] interface {
+	DelayedItemSubmitter[T]
+	ObservableItemSubmitter[T]
+	// TrySubmitAfter is like SubmitAfter but reports cancellation or shutdown.
+	TrySubmitAfter(context.Context, T, time.Duration) error
+}
+
 type defaultItemSubmitter[T ItemSubmitterConstraint] struct {
 	consumerWorkerPool          workerpool.ConsumerWorkerPool[T]
 	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource
@@ -76,6 +104,17 @@ func NewDefaultItemSubmitter[T ItemSubmitterConstraint](
 	consumerWorkerPool workerpool.ConsumerWorkerPool[T],
 	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource,
 	options ...ItemSubmitterOption) DelayedItemSubmitter[T] {
+	return NewObservableItemSubmitter(ctx, consumerWorkerPool, keyedErrorHealthCheckSource, options...)
+}
+
+// NewObservableItemSubmitter creates a submitter with immediate and delayed
+// acceptance reporting. Accepted work is held in memory and can be lost on
+// shutdown, including delayed work whose timer has not fired.
+func NewObservableItemSubmitter[T ItemSubmitterConstraint](
+	ctx context.Context,
+	consumerWorkerPool workerpool.ConsumerWorkerPool[T],
+	keyedErrorHealthCheckSource window.KeyedErrorHealthCheckSource,
+	options ...ItemSubmitterOption) ObservableDelayedItemSubmitter[T] {
 	config := ItemSubmitterConfig{
 		maxNumRequeues: 5,
 		logError: func(ctx context.Context, err error) {
@@ -111,6 +150,26 @@ func (d defaultItemSubmitter[T]) Submit(ctx context.Context, element T) {
 
 func (d defaultItemSubmitter[T]) SubmitAfter(ctx context.Context, element T, delay time.Duration) {
 	d.queue.AddAfter(element, delay)
+}
+
+func (d defaultItemSubmitter[T]) TrySubmit(ctx context.Context, element T) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: %w", ErrItemSubmitterContext, err)
+	}
+	if !d.queue.AddIfRunning(element) {
+		return ErrItemSubmitterShutdown
+	}
+	return nil
+}
+
+func (d defaultItemSubmitter[T]) TrySubmitAfter(ctx context.Context, element T, delay time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: %w", ErrItemSubmitterContext, err)
+	}
+	if !d.queue.AddAfterIfRunning(element, delay) {
+		return ErrItemSubmitterShutdown
+	}
+	return nil
 }
 
 func (d defaultItemSubmitter[T]) startPullingFromQueue(ctx context.Context) {
