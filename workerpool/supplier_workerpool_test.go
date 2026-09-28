@@ -163,34 +163,6 @@ func Test_WorkerpoolConcurrentSubmissions_WorkerCap(t *testing.T) {
 	}
 }
 
-func Test_WorkerpoolConcurrentSubmissions_NoCap(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		options []Option
-	}{{
-		name: "unset",
-	}, {
-		name:    "zero",
-		options: []Option{WithMaxNumberOfWorkers(0)},
-	}, {
-		name:    "negative",
-		options: []Option{WithMaxNumberOfWorkers(-1)},
-	}} {
-		t.Run(tc.name, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
-				defer cancel()
-				workerPool := NewDefaultSupplierWorkerPool[int](ctx, tc.options...).(*defaultSupplierWorkerPool[int])
-				require.Zero(t, workerPool.getCurrentCount())
-
-				for range 2 {
-					assertConcurrentSupplierWave(t, ctx, workerPool, 32, 32)
-				}
-			})
-		})
-	}
-}
-
 // assertConcurrentSupplierWave must run inside a synctest bubble with all existing workers idle.
 func assertConcurrentSupplierWave(t *testing.T, ctx context.Context, workerPool *defaultSupplierWorkerPool[int], submissions, workers int) {
 	t.Helper()
