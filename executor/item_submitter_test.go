@@ -339,6 +339,11 @@ func TestItemSubmitter_ConsumerPanicReleasesIdentifier(t *testing.T) {
 	assert.Error(t, recoveredErr)
 	assert.Equal(t, int32(2), attempts.Load())
 
+	// Both panic completions must report unhealthy status before resubmission.
+	status := healthCheckSource.HealthStatus(ctx)
+	assert.Equal(t, health.HealthState_ERROR, status.Checks[health.CheckType("test")].State.Value(),
+		"the panic completions must report unhealthy status")
+
 	submitter.Submit(ctx, item)
 
 	// Healthy status is reported by completion, not just when processing starts.
