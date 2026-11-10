@@ -285,3 +285,73 @@ func TestItemSubmitterUnlimitedRetriesRequeuesAfterMaximum(t *testing.T) {
 		return itemQueue.Len() == 1
 	}, time.Second, 10*time.Millisecond)
 }
+
+func TestItemSubmitter_ConsumerPanicReleasesIdentifier(t *testing.T) {
+	ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+	defer cancel()
+
+	healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(
+		health.CheckType("test"),
+		// The successful resubmission should clear the earlier failure status.
+		window.HealthyIfNoRecentErrors,
+	)
+
+	var attempts atomic.Int32
+	consumer := function.NewConsumerFromFunc(func(_ context.Context, _ testItem) error {
+		if attempts.Add(1) <= 2 {
+			// Both the initial attempt and its retry must reach completion
+			// so the submitter can release the item's identifier.
+			panic("consumer panicked")
+		}
+		return nil
+	})
+
+	// One worker prevents spare capacity from hiding a stalled worker.
+	pool := workerpool.NewDefaultConsumerWorkerPool(
+		ctx, consumer, workerpool.WithMaxNumberOfWorkers(1),
+	)
+
+	var reportedErr atomic.Value
+	var errorCompletions atomic.Int32
+	submitter := NewDefaultItemSubmitter(
+		ctx,
+		pool,
+		healthCheckSource,
+		WithMaxNumRequeues(1),
+		WithErrorLogger(func(_ context.Context, err error) {
+			reportedErr.Store(err)
+			// Publish the notification after recording the recovered error.
+			errorCompletions.Add(1)
+		}),
+	)
+
+	item := testItem("same-item")
+	submitter.Submit(ctx, item)
+
+	// The error handler runs after queue.Done releases the identifier.
+	// Wait for both failed attempts to reach that point before resubmitting.
+	assert.Eventually(t, func() bool {
+		return errorCompletions.Load() == 2
+	}, 5*time.Second, 50*time.Millisecond,
+		"both recovered panics must reach the submitter's error handler")
+
+	recoveredErr, _ := reportedErr.Load().(error)
+	assert.Error(t, recoveredErr)
+	assert.Equal(t, int32(2), attempts.Load())
+
+	// Both panic completions must report unhealthy status before resubmission.
+	status := healthCheckSource.HealthStatus(ctx)
+	assert.Equal(t, health.HealthState_ERROR, status.Checks[health.CheckType("test")].State.Value(),
+		"the panic completions must report unhealthy status")
+
+	submitter.Submit(ctx, item)
+
+	// Healthy status is reported by completion, not just when processing starts.
+	assert.Eventually(t, func() bool {
+		status := healthCheckSource.HealthStatus(ctx)
+		check, ok := status.Checks[health.CheckType("test")]
+		return attempts.Load() == 3 && ok && check.State.Value() == health.HealthState_HEALTHY
+	}, time.Second, 50*time.Millisecond,
+		"the same identifier must complete successfully after the panics")
+	assert.Equal(t, int32(2), errorCompletions.Load())
+}
