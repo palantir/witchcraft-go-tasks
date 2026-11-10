@@ -448,73 +448,99 @@ func Test_WorkerPoolStopsProcessingIfParentContextStopped(t *testing.T) {
 }
 
 func TestSupplierWorkerPool_SubmitWithCallback_RecoversSupplierPanic(t *testing.T) {
-	ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
-	defer cancel()
+	for _, tc := range []struct {
+		name  string
+		value any
+	}{
+		{name: "string", value: "supplier panic"},
+		{name: "error", value: werror.Error("supplier panic")},
+		{name: "nil"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+			defer cancel()
 
-	// Use one worker so follow-up work cannot rely on spare capacity
-	// to hide a worker that became stuck after the panic.
-	pool := NewDefaultSupplierWorkerPool[string](
-		ctx, WithMaxNumberOfWorkers(1),
-	)
+			// Use one worker so follow-up work cannot rely on spare capacity
+			// to hide a worker that became stuck after the panic.
+			pool := NewDefaultSupplierWorkerPool[string](
+				ctx, WithMaxNumberOfWorkers(1),
+			)
 
-	var panicCalls atomic.Int32
-	var panicResult, panicErr atomic.Value
+			var panicCalls atomic.Int32
+			var panicResult, panicErr atomic.Value
 
-	pool.SubmitWithCallback(ctx,
-		function.NewSupplierFromFunc(func(context.Context) (string, error) {
-			// Simulate a panic in user-supplied code. Outer recovery previously
-			// caught this panic but skipped the completion callback.
-			panic("supplier panicked")
-		}),
-		func(_ context.Context, result string, err error) {
-			panicCalls.Add(1)
-			panicResult.Store(result)
-			if err != nil {
-				panicErr.Store(err)
-			}
-		},
-	)
+			pool.SubmitWithCallback(ctx,
+				function.NewSupplierFromFunc(func(context.Context) (string, error) {
+					// Simulate a panic in user-supplied code. Outer recovery previously
+					// caught this panic but skipped the completion callback.
+					panic(tc.value)
+				}),
+				func(callbackCtx context.Context, result string, err error) {
+					panicCalls.Add(1)
+					assert.Same(t, ctx, callbackCtx)
+					assert.Empty(t, result)
+					assert.ErrorContains(t, err, "panic recovered")
+					if panicErr, ok := tc.value.(error); ok {
+						assert.ErrorIs(t, err, panicErr)
+					}
+					panicResult.Store(result)
+					if err != nil {
+						panicErr.Store(err)
+					}
+				},
+			)
 
-	var successCalls atomic.Int32
-	var successResult atomic.Value
-	var successHadNoErr, successCalled atomic.Bool
+			var successCalls atomic.Int32
+			var successResult atomic.Value
+			var successHadNoErr, successCalled atomic.Bool
 
-	pool.SubmitWithCallback(ctx,
-		function.NewSupplierFromFunc(func(context.Context) (string, error) {
-			return "success", nil
-		}),
-		func(_ context.Context, result string, err error) {
-			successCalls.Add(1)
-			successResult.Store(result)
-			successHadNoErr.Store(err == nil)
+			pool.SubmitWithCallback(ctx,
+				function.NewSupplierFromFunc(func(context.Context) (string, error) {
+					return "success", nil
+				}),
+				func(_ context.Context, result string, err error) {
+					successCalls.Add(1)
+					successResult.Store(result)
+					successHadNoErr.Store(err == nil)
 
-			// Publish readiness last so the test sees all callback results.
-			successCalled.Store(true)
-		},
-	)
+					// Publish readiness last so the test sees all callback results.
+					successCalled.Store(true)
+				},
+			)
 
-	// Wait for the follow-up callback. With one worker, reaching it means
-	// the earlier panicking job has finished, so we can check both outcomes.
-	assert.Eventually(t, successCalled.Load, time.Second, 50*time.Millisecond)
+			// Wait for the follow-up callback. With one worker, reaching it means
+			// the earlier panicking job has finished, so we can check both outcomes.
+			assert.Eventually(t, successCalled.Load, time.Second, 50*time.Millisecond)
 
-	// Recovery must deliver completion exactly once, even when the supplier
-	// panics. This fails if recovery catches the panic but skips completion.
-	assert.Equal(t, int32(1), panicCalls.Load())
+			// Check ordinary Submit too. With one worker, this job also waits
+			// until both earlier callbacks have finished before counts are checked.
+			future := pool.Submit(ctx, function.NewSupplierFromFunc(func(context.Context) (string, error) {
+				return "next result", nil
+			}))
+			result, err := future.Get(ctx)
+			assert.NoError(t, err)
+			assert.Equal(t, "next result", result)
 
-	// The supplier panicked before returning, so completion should receive
-	// the string type's zero value.
-	assert.Equal(t, "", panicResult.Load())
+			// Recovery must deliver completion exactly once, even when the supplier
+			// panics. This fails if recovery catches it but skips completion.
+			assert.Equal(t, int32(1), panicCalls.Load())
 
-	// Completion must report the recovered panic as an error,
-	// rather than treating the job as successful.
-	recoveredErr, _ := panicErr.Load().(error)
-	assert.Error(t, recoveredErr)
+			// The supplier panicked before returning, so completion should receive
+			// the string type's zero value.
+			assert.Equal(t, "", panicResult.Load())
 
-	// The pool must remain usable after the panic: the follow-up job
-	// must complete once with its expected result and no error.
-	assert.Equal(t, int32(1), successCalls.Load())
-	assert.Equal(t, "success", successResult.Load())
-	assert.True(t, successHadNoErr.Load())
+			// Completion must report the recovered panic as an error,
+			// rather than treating the job as successful.
+			recoveredErr, _ := panicErr.Load().(error)
+			assert.Error(t, recoveredErr)
+
+			// The pool must remain usable after the panic: the follow-up job
+			// must complete once with its expected result and no error.
+			assert.Equal(t, int32(1), successCalls.Load())
+			assert.Equal(t, "success", successResult.Load())
+			assert.True(t, successHadNoErr.Load())
+		})
+	}
 }
 
 func timeInRange(t *testing.T, start time.Time, milliLessThan, milliMoreThan int64) {
@@ -528,4 +554,26 @@ func getContextWithRegistry() (context.Context, metrics.Registry) {
 	ctx := context.Background()
 	ctx = metrics.WithRegistry(ctx, registry)
 	return ctx, registry
+}
+
+func TestSupplierWorkerPool_SubmitWithCallback_CallbackPanic(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+		defer cancel()
+		pool := NewDefaultSupplierWorkerPool[string](ctx, WithMaxNumberOfWorkers(1))
+		calls := 0
+		supplier := function.NewSupplierFromFunc(func(context.Context) (string, error) {
+			return "result", nil
+		})
+		pool.SubmitWithCallback(ctx, supplier, func(context.Context, string, error) {
+			calls++
+			panic("callback panic")
+		})
+		future := pool.Submit(ctx, supplier)
+		result, err := future.Get(ctx)
+		synctest.Wait()
+		assert.NoError(t, err)
+		assert.Equal(t, "result", result)
+		assert.Equal(t, 1, calls)
+	})
 }

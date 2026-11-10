@@ -292,13 +292,14 @@ func TestItemSubmitter_ConsumerPanicReleasesIdentifier(t *testing.T) {
 
 	healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(
 		health.CheckType("test"),
-		window.UnhealthyIfAtLeastOneError,
+		// The successful resubmission should clear the earlier failure status.
+		window.HealthyIfNoRecentErrors,
 	)
 
 	var attempts atomic.Int32
 	consumer := function.NewConsumerFromFunc(func(_ context.Context, _ testItem) error {
-		if attempts.Add(1) == 1 {
-			// Simulate a consumer failure. Completion must still run
+		if attempts.Add(1) <= 2 {
+			// Both the initial attempt and its retry must reach completion
 			// so the submitter can release the item's identifier.
 			panic("consumer panicked")
 		}
@@ -311,40 +312,41 @@ func TestItemSubmitter_ConsumerPanicReleasesIdentifier(t *testing.T) {
 	)
 
 	var reportedErr atomic.Value
+	var errorCompletions atomic.Int32
 	submitter := NewDefaultItemSubmitter(
 		ctx,
 		pool,
 		healthCheckSource,
-		// Disable automatic retries so a second attempt must come
-		// from our explicit submission of the same item.
-		WithMaxNumRequeues(0),
+		WithMaxNumRequeues(1),
 		WithErrorLogger(func(_ context.Context, err error) {
 			reportedErr.Store(err)
+			// Publish the notification after recording the recovered error.
+			errorCompletions.Add(1)
 		}),
 	)
 
 	item := testItem("same-item")
 	submitter.Submit(ctx, item)
 
-	// The error handler runs after the identifier is released.
-	// Waiting for it ensures we resubmit after that cleanup.
+	// The error handler runs after queue.Done releases the identifier.
+	// Wait for both failed attempts to reach that point before resubmitting.
 	assert.Eventually(t, func() bool {
-		return reportedErr.Load() != nil
-	}, time.Second, 50*time.Millisecond,
-		"the recovered panic must reach the submitter's error handler")
+		return errorCompletions.Load() == 2
+	}, 5*time.Second, 50*time.Millisecond,
+		"both recovered panics must reach the submitter's error handler")
 
-	// A missing error should fail an assertion rather than panic,
-	// since the test continues even if the wait times out.
 	recoveredErr, _ := reportedErr.Load().(error)
 	assert.Error(t, recoveredErr)
-	assert.Equal(t, int32(1), attempts.Load())
+	assert.Equal(t, int32(2), attempts.Load())
 
 	submitter.Submit(ctx, item)
 
-	// Reaching the consumer again proves the panic did not leave
-	// the same identifier stuck in use.
+	// Healthy status is reported by completion, not just when processing starts.
 	assert.Eventually(t, func() bool {
-		return attempts.Load() == 2
+		status := healthCheckSource.HealthStatus(ctx)
+		check, ok := status.Checks[health.CheckType("test")]
+		return attempts.Load() == 3 && ok && check.State.Value() == health.HealthState_HEALTHY
 	}, time.Second, 50*time.Millisecond,
-		"the same identifier must be processed again after the panic")
+		"the same identifier must complete successfully after the panics")
+	assert.Equal(t, int32(2), errorCompletions.Load())
 }

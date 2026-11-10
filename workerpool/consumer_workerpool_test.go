@@ -116,8 +116,11 @@ func TestConsumerWorkerPool_SubmitWithCallback(t *testing.T) {
 		var panicCalls atomic.Int32
 		var panicErr atomic.Value
 		pool.SubmitWithCallback(ctx, "consumer-panic",
-			func(_ context.Context, _ string, err error) {
+			func(callbackCtx context.Context, arg string, err error) {
 				panicCalls.Add(1)
+				assert.Same(t, ctx, callbackCtx)
+				assert.Equal(t, "consumer-panic", arg)
+				assert.ErrorContains(t, err, "panic recovered")
 				if err != nil {
 					panicErr.Store(err)
 				}

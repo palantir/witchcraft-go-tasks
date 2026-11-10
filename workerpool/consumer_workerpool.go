@@ -17,7 +17,6 @@ package workerpool
 import (
 	"context"
 
-	"github.com/palantir/witchcraft-go-logging/wlog/wapp"
 	"github.com/palantir/witchcraft-go-tasks/function"
 	"github.com/palantir/witchcraft-go-tasks/util/async"
 )
@@ -40,11 +39,7 @@ func (d defaultConsumerWorkerPool[T]) Submit(ctx context.Context, arg T) async.V
 }
 
 func (d *defaultConsumerWorkerPool[T]) SubmitWithCallback(ctx context.Context, arg T, onComplete func(context.Context, T, error)) {
-	d.workerPool.Submit(ctx, function.NewRunnableFromFunc(func(ctx context.Context) error {
-		err := wapp.RunWithRecoveryLoggingWithError(ctx, func(ctx context.Context) error {
-			return d.consumer.Accept(ctx, arg)
-		})
+	d.workerPool.SubmitWithCallback(ctx, function.NewRunnableFromConsumer(arg, d.consumer), func(ctx context.Context, err error) {
 		onComplete(ctx, arg, err)
-		return err
-	}))
+	})
 }
