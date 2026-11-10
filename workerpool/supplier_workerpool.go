@@ -83,7 +83,13 @@ func (d *defaultSupplierWorkerPool[R]) Submit(ctxFromClient context.Context, sup
 
 func (d *defaultSupplierWorkerPool[R]) SubmitWithCallback(ctxFromClient context.Context, supplier function.Supplier[R], onComplete func(context.Context, R, error)) {
 	d.Submit(ctxFromClient, function.NewSupplierFromFunc(func(ctx context.Context) (R, error) {
-		result, err := supplier.Get(ctx)
+		var result R
+		// Recover before invoking the callback so task panics still run completion handling.
+		err := wapp.RunWithRecoveryLoggingWithError(ctx, func(ctx context.Context) error {
+			var err error
+			result, err = supplier.Get(ctx)
+			return err
+		})
 		onComplete(ctx, result, err)
 		return result, err
 	}))

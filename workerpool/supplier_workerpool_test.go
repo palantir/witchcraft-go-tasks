@@ -458,3 +458,64 @@ func getContextWithRegistry() (context.Context, metrics.Registry) {
 	ctx = metrics.WithRegistry(ctx, registry)
 	return ctx, registry
 }
+
+func TestSupplierWorkerPool_SubmitWithCallback_Panic(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value any
+	}{
+		{name: "string", value: "supplier panic"},
+		{name: "error", value: werror.Error("supplier panic")},
+		{name: "nil"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+				defer cancel()
+				pool := NewDefaultSupplierWorkerPool[string](ctx, WithMaxNumberOfWorkers(1))
+				calls := 0
+				pool.SubmitWithCallback(ctx, function.NewSupplierFromFunc(func(context.Context) (string, error) {
+					panic(tc.value)
+				}), func(callbackCtx context.Context, result string, err error) {
+					calls++
+					assert.Same(t, ctx, callbackCtx)
+					assert.Empty(t, result)
+					assert.ErrorContains(t, err, "panic recovered")
+					if panicErr, ok := tc.value.(error); ok {
+						assert.ErrorIs(t, err, panicErr)
+					}
+				})
+				synctest.Wait()
+				assert.Equal(t, 1, calls)
+				future := pool.Submit(ctx, function.NewSupplierFromFunc(func(context.Context) (string, error) {
+					return "next result", nil
+				}))
+				result, err := future.Get(ctx)
+				assert.NoError(t, err)
+				assert.Equal(t, "next result", result)
+			})
+		})
+	}
+}
+
+func TestSupplierWorkerPool_SubmitWithCallback_CallbackPanic(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+		defer cancel()
+		pool := NewDefaultSupplierWorkerPool[string](ctx, WithMaxNumberOfWorkers(1))
+		calls := 0
+		supplier := function.NewSupplierFromFunc(func(context.Context) (string, error) {
+			return "result", nil
+		})
+		pool.SubmitWithCallback(ctx, supplier, func(context.Context, string, error) {
+			calls++
+			panic("callback panic")
+		})
+		future := pool.Submit(ctx, supplier)
+		result, err := future.Get(ctx)
+		synctest.Wait()
+		assert.NoError(t, err)
+		assert.Equal(t, "result", result)
+		assert.Equal(t, 1, calls)
+	})
+}

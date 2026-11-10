@@ -285,3 +285,27 @@ func TestItemSubmitterUnlimitedRetriesRequeuesAfterMaximum(t *testing.T) {
 		return itemQueue.Len() == 1
 	}, time.Second, 10*time.Millisecond)
 }
+
+func TestItemSubmitter_SubmitWithPanic(t *testing.T) {
+	ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+	defer cancel()
+	healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.HealthyIfNoRecentErrors)
+	var attempts atomic.Int32
+	consumer := function.NewConsumerFromFunc(func(context.Context, testItem) error {
+		if attempts.Add(1) <= 2 {
+			panic("processing panic")
+		}
+		return nil
+	})
+	pool := workerpool.NewDefaultConsumerWorkerPool(ctx, consumer, workerpool.WithMaxNumberOfWorkers(1))
+	submitter := NewDefaultItemSubmitter(ctx, pool, healthCheckSource, WithMaxNumRequeues(1), WithErrorLogger(func(context.Context, error) {}))
+	submitter.Submit(ctx, testItem("test-item"))
+	assert.Eventually(t, func() bool {
+		return attempts.Load() == 2 && healthCheckSource.HealthStatus(ctx).Checks[health.CheckType("test")].State.Value() == health.HealthState_ERROR
+	}, 5*time.Second, 10*time.Millisecond)
+	// Exhausting retries must release the identifier so it can be submitted again.
+	submitter.Submit(ctx, testItem("test-item"))
+	assert.Eventually(t, func() bool {
+		return attempts.Load() == 3 && healthCheckSource.HealthStatus(ctx).Checks[health.CheckType("test")].State.Value() == health.HealthState_HEALTHY
+	}, time.Second, 10*time.Millisecond)
+}

@@ -19,9 +19,11 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/palantir/witchcraft-go-tasks/function"
+	"github.com/palantir/witchcraft-go-tasks/internal/testcontext"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -89,5 +91,25 @@ func TestConsumerWorkerPool_SubmitWithCallback(t *testing.T) {
 		}, time.Millisecond*100, time.Millisecond*10)
 		assert.Equal(t, "test-arg", callbackArg.Load())
 		assert.Equal(t, expectedErr, callbackErr.Load())
+	})
+}
+
+func TestConsumerWorkerPool_SubmitWithCallback_Panic(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+		defer cancel()
+		consumer := function.NewConsumerFromFunc(func(context.Context, string) error {
+			panic("consumer panic")
+		})
+		pool := NewDefaultConsumerWorkerPool(ctx, consumer, WithMaxNumberOfWorkers(1))
+		calls := 0
+		pool.SubmitWithCallback(ctx, "test-arg", func(callbackCtx context.Context, arg string, err error) {
+			calls++
+			assert.Same(t, ctx, callbackCtx)
+			assert.Equal(t, "test-arg", arg)
+			assert.ErrorContains(t, err, "panic recovered")
+		})
+		synctest.Wait()
+		assert.Equal(t, 1, calls)
 	})
 }

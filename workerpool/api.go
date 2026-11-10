@@ -55,6 +55,7 @@
 //
 // Use Submit when you need the result synchronously or want to coordinate multiple futures.
 // Use SubmitWithCallback for fire-and-forget patterns or when handling results asynchronously.
+// Task panics are recovered and passed to the completion callback as errors, with a zero-value result where applicable.
 package workerpool
 
 import (
