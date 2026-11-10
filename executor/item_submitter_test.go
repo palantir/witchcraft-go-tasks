@@ -17,6 +17,7 @@ package executor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -36,6 +37,77 @@ type testItem string
 
 func (t testItem) String() string {
 	return string(t)
+}
+
+func TestTrySubmitLifecycleErrors(t *testing.T) {
+	for _, delayed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("delayed=%t", delayed), func(t *testing.T) {
+			q := queue.NewCollapsingQueue[testItem]()
+			defer q.ShutDown()
+			submitter := defaultItemSubmitter[testItem]{queue: q}
+			submit := func(ctx context.Context) error {
+				if delayed {
+					return submitter.TrySubmitAfter(ctx, testItem("item"), time.Hour)
+				}
+				return submitter.TrySubmit(ctx, testItem("item"))
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			require.ErrorIs(t, submit(ctx), ErrItemSubmitterContext)
+			require.ErrorIs(t, submit(ctx), context.Canceled)
+			expired, stop := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+			defer stop()
+			require.ErrorIs(t, submit(expired), context.DeadlineExceeded)
+			require.Equal(t, 0, q.Len())
+			require.NoError(t, submit(context.Background()))
+			q.ShutDown()
+			require.ErrorIs(t, submit(context.Background()), ErrItemSubmitterShutdown)
+		})
+	}
+}
+
+type legacySubmitter struct{}
+
+func (legacySubmitter) Submit(context.Context, testItem)                     {}
+func (legacySubmitter) SubmitAfter(context.Context, testItem, time.Duration) {}
+
+var _ ItemSubmitter[testItem] = legacySubmitter{}
+var _ DelayedItemSubmitter[testItem] = legacySubmitter{}
+var _ func(context.Context, workerpool.ConsumerWorkerPool[testItem], window.KeyedErrorHealthCheckSource, ...ItemSubmitterOption) DelayedItemSubmitter[testItem] = NewDefaultItemSubmitter[testItem]
+
+func TestLegacySubmitRetainsContextBehavior(t *testing.T) {
+	q := queue.NewCollapsingQueue[testItem]()
+	defer q.ShutDown()
+	submitter := defaultItemSubmitter[testItem]{queue: q}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	submitter.Submit(ctx, testItem("immediate"))
+	submitter.SubmitAfter(ctx, testItem("delayed"), 0)
+	require.Equal(t, 2, q.Len())
+}
+
+func TestObservableSubmitterProcessesAcceptedWork(t *testing.T) {
+	ctx := testcontext.GetTestContext(t)
+	healthSource := window.MustNewKeyedErrorHealthCheckSource(health.CheckType("test"), window.UnhealthyIfAtLeastOneError)
+	processed := make(chan testItem, 2)
+	pool := workerpool.NewDefaultConsumerWorkerPool(ctx, function.NewConsumerFromFunc(func(_ context.Context, item testItem) error {
+		processed <- item
+		return nil
+	}))
+	submitter := NewObservableItemSubmitter(ctx, pool, healthSource)
+	require.NoError(t, submitter.TrySubmit(ctx, testItem("immediate")))
+	require.NoError(t, submitter.TrySubmitAfter(ctx, testItem("delayed"), time.Millisecond))
+	got := make(map[testItem]bool)
+	for range 2 {
+		select {
+		case item := <-processed:
+			got[item] = true
+		case <-time.After(time.Second):
+			t.Fatal("accepted work was not processed")
+		}
+	}
+	require.True(t, got[testItem("immediate")])
+	require.True(t, got[testItem("delayed")])
 }
 
 func metricHasTag(registry metrics.RootRegistry, metricName, tagKey, tagValue string) bool {

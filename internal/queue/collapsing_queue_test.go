@@ -141,6 +141,28 @@ func TestCollapsingQueue_ShutDown(t *testing.T) {
 	assert.True(t, q.ShuttingDown())
 }
 
+func TestCollapsingQueue_AddIfRunningReportsShutdown(t *testing.T) {
+	q := NewCollapsingQueue[string]()
+	if !q.AddIfRunning("item") {
+		t.Fatal("AddIfRunning rejected an item before shutdown")
+	}
+	q.ShutDown()
+	if q.AddIfRunning("after-shutdown") {
+		t.Fatal("AddIfRunning accepted an item after shutdown")
+	}
+}
+
+func TestCollapsingQueue_AddAfterIfRunningReportsShutdown(t *testing.T) {
+	q := NewCollapsingQueue[string]()
+	if !q.AddAfterIfRunning("item", time.Hour) {
+		t.Fatal("AddAfterIfRunning rejected an item before shutdown")
+	}
+	q.ShutDown()
+	if q.AddAfterIfRunning("after-shutdown", time.Hour) {
+		t.Fatal("AddAfterIfRunning accepted an item after shutdown")
+	}
+}
+
 func TestCollapsingQueue_ShutDownUnblocksGet(t *testing.T) {
 	q := NewCollapsingQueue[string]()
 	var item string
