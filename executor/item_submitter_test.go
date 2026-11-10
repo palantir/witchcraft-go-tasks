@@ -285,3 +285,66 @@ func TestItemSubmitterUnlimitedRetriesRequeuesAfterMaximum(t *testing.T) {
 		return itemQueue.Len() == 1
 	}, time.Second, 10*time.Millisecond)
 }
+
+func TestItemSubmitter_ConsumerPanicReleasesIdentifier(t *testing.T) {
+	ctx, cancel := context.WithCancel(testcontext.GetTestContext(t))
+	defer cancel()
+
+	healthCheckSource := window.MustNewKeyedErrorHealthCheckSource(
+		health.CheckType("test"),
+		window.UnhealthyIfAtLeastOneError,
+	)
+
+	var attempts atomic.Int32
+	consumer := function.NewConsumerFromFunc(func(_ context.Context, _ testItem) error {
+		if attempts.Add(1) == 1 {
+			// Simulate a consumer failure. Completion must still run
+			// so the submitter can release the item's identifier.
+			panic("consumer panicked")
+		}
+		return nil
+	})
+
+	// One worker prevents spare capacity from hiding a stalled worker.
+	pool := workerpool.NewDefaultConsumerWorkerPool(
+		ctx, consumer, workerpool.WithMaxNumberOfWorkers(1),
+	)
+
+	var reportedErr atomic.Value
+	submitter := NewDefaultItemSubmitter(
+		ctx,
+		pool,
+		healthCheckSource,
+		// Disable automatic retries so a second attempt must come
+		// from our explicit submission of the same item.
+		WithMaxNumRequeues(0),
+		WithErrorLogger(func(_ context.Context, err error) {
+			reportedErr.Store(err)
+		}),
+	)
+
+	item := testItem("same-item")
+	submitter.Submit(ctx, item)
+
+	// The error handler runs after the identifier is released.
+	// Waiting for it ensures we resubmit after that cleanup.
+	assert.Eventually(t, func() bool {
+		return reportedErr.Load() != nil
+	}, time.Second, 50*time.Millisecond,
+		"the recovered panic must reach the submitter's error handler")
+
+	// A missing error should fail an assertion rather than panic,
+	// since the test continues even if the wait times out.
+	recoveredErr, _ := reportedErr.Load().(error)
+	assert.Error(t, recoveredErr)
+	assert.Equal(t, int32(1), attempts.Load())
+
+	submitter.Submit(ctx, item)
+
+	// Reaching the consumer again proves the panic did not leave
+	// the same identifier stuck in use.
+	assert.Eventually(t, func() bool {
+		return attempts.Load() == 2
+	}, time.Second, 50*time.Millisecond,
+		"the same identifier must be processed again after the panic")
+}
