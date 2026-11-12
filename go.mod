@@ -25,7 +25,7 @@ require (
 	github.com/palantir/pkg/safeyaml v1.2.0 // indirect
 	github.com/palantir/pkg/transform v1.2.0 // indirect
 	github.com/palantir/pkg/uuid v1.4.0 // indirect
-	github.com/palantir/witchcraft-go-params v1.50.0 // indirect
+	github.com/palantir/witchcraft-go-params v1.51.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
